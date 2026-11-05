@@ -119,16 +119,6 @@
       ]
     },
     {
-      "package": "HarfBuzzSharp.NativeAssets.macOS",
-      "version": "8.3.1.1",
-      "license": "MIT",
-      "copyright": "© Microsoft Corporation. All rights reserved.",
-      "notices": [
-        "licenses/HarfBuzzSharp.NativeAssets.macOS/8.3.1.1/THIRD-PARTY-NOTICES.txt",
-        "licenses/HarfBuzzSharp.NativeAssets.macOS/8.3.1.1/LICENSE.txt"
-      ]
-    },
-    {
       "package": "HarfBuzzSharp.NativeAssets.WebAssembly",
       "version": "8.3.1.1",
       "license": "MIT",
@@ -149,6 +139,16 @@
       ]
     },
     {
+      "package": "HarfBuzzSharp.NativeAssets.macOS",
+      "version": "8.3.1.1",
+      "license": "MIT",
+      "copyright": "© Microsoft Corporation. All rights reserved.",
+      "notices": [
+        "licenses/HarfBuzzSharp.NativeAssets.macOS/8.3.1.1/THIRD-PARTY-NOTICES.txt",
+        "licenses/HarfBuzzSharp.NativeAssets.macOS/8.3.1.1/LICENSE.txt"
+      ]
+    },
+    {
       "package": "MicroCom.Runtime",
       "version": "0.11.0",
       "license": "MIT",
@@ -159,7 +159,7 @@
     },
     {
       "package": "Microsoft.Data.Sqlite",
-      "version": "10.0.2",
+      "version": "10.0.14",
       "license": "MIT",
       "copyright": "© Microsoft Corporation. All rights reserved.",
       "notices": [
@@ -168,11 +168,47 @@
     },
     {
       "package": "Microsoft.Data.Sqlite.Core",
-      "version": "10.0.2",
+      "version": "10.0.14",
       "license": "MIT",
       "copyright": "© Microsoft Corporation. All rights reserved.",
       "notices": [
         "licenses/Microsoft.Data.Sqlite.txt"
+      ]
+    },
+    {
+      "package": "SQLitePCLRaw.bundle_e_sqlite3",
+      "version": "2.1.13",
+      "license": "Apache-2.0",
+      "copyright": "Copyright 2014-2024 SourceGear, LLC",
+      "notices": [
+        "licenses/SQLitePCLRaw.txt"
+      ]
+    },
+    {
+      "package": "SQLitePCLRaw.core",
+      "version": "2.1.13",
+      "license": "Apache-2.0",
+      "copyright": "Copyright 2014-2024 SourceGear, LLC",
+      "notices": [
+        "licenses/SQLitePCLRaw.txt"
+      ]
+    },
+    {
+      "package": "SQLitePCLRaw.lib.e_sqlite3",
+      "version": "2.1.13",
+      "license": "Apache-2.0",
+      "copyright": "Copyright 2014-2024 SourceGear, LLC",
+      "notices": [
+        "licenses/SQLitePCLRaw.txt"
+      ]
+    },
+    {
+      "package": "SQLitePCLRaw.provider.e_sqlite3",
+      "version": "2.1.13",
+      "license": "Apache-2.0",
+      "copyright": "Copyright 2014-2024 SourceGear, LLC",
+      "notices": [
+        "licenses/SQLitePCLRaw.txt"
       ]
     },
     {
@@ -234,16 +270,6 @@
       ]
     },
     {
-      "package": "SkiaSharp.NativeAssets.macOS",
-      "version": "3.119.0",
-      "license": "MIT",
-      "copyright": "© Microsoft Corporation. All rights reserved.",
-      "notices": [
-        "licenses/SkiaSharp.NativeAssets.macOS/3.119.0/THIRD-PARTY-NOTICES.txt",
-        "licenses/SkiaSharp.NativeAssets.macOS/3.119.0/LICENSE.txt"
-      ]
-    },
-    {
       "package": "SkiaSharp.NativeAssets.WebAssembly",
       "version": "2.88.9",
       "license": "MIT",
@@ -264,39 +290,13 @@
       ]
     },
     {
-      "package": "SQLitePCLRaw.bundle_e_sqlite3",
-      "version": "2.1.11",
-      "license": "Apache-2.0",
-      "copyright": "Copyright 2014-2024 SourceGear, LLC",
+      "package": "SkiaSharp.NativeAssets.macOS",
+      "version": "3.119.0",
+      "license": "MIT",
+      "copyright": "© Microsoft Corporation. All rights reserved.",
       "notices": [
-        "licenses/SQLitePCLRaw.txt"
-      ]
-    },
-    {
-      "package": "SQLitePCLRaw.core",
-      "version": "2.1.11",
-      "license": "Apache-2.0",
-      "copyright": "Copyright 2014-2024 SourceGear, LLC",
-      "notices": [
-        "licenses/SQLitePCLRaw.txt"
-      ]
-    },
-    {
-      "package": "SQLitePCLRaw.lib.e_sqlite3",
-      "version": "2.1.11",
-      "license": "Apache-2.0",
-      "copyright": "Copyright 2014-2024 SourceGear, LLC",
-      "notices": [
-        "licenses/SQLitePCLRaw.txt"
-      ]
-    },
-    {
-      "package": "SQLitePCLRaw.provider.e_sqlite3",
-      "version": "2.1.11",
-      "license": "Apache-2.0",
-      "copyright": "Copyright 2014-2024 SourceGear, LLC",
-      "notices": [
-        "licenses/SQLitePCLRaw.txt"
+        "licenses/SkiaSharp.NativeAssets.macOS/3.119.0/THIRD-PARTY-NOTICES.txt",
+        "licenses/SkiaSharp.NativeAssets.macOS/3.119.0/LICENSE.txt"
       ]
     },
     {
