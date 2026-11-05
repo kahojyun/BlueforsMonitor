@@ -78,6 +78,20 @@ static class MonitoringSessionChecks
         cursors[3].SetException(new IOException("closed cursor"));
         Verification.Check(await closingRead == null && await closingCursor == null, "Close suppresses late data and errors");
         Verification.Check(await session.LoadAsync(0, 1000) == null && await session.OpenAsync(logs) == null && await session.RefreshAsync(true) == null, "Disposed session does not restart work");
+        File.AppendAllText(Path.Combine(logs, "CH6 T 26-11-05.log"), "05-11-26,10:01:00,0.013\n");
+        using var reopened = new MonitoringSession(new DataStore(Path.Combine(scratch, "preview-empty")), Path.Combine(scratch, "session-cache"));
+        bool previewed = false;
+        await reopened.OpenAsync(logs, null, async () =>
+        {
+            previewed = true;
+            Verification.Check(reopened.Store.Snapshot.Counts["CH6"] == 1, "Preview uses existing snapshot before new logs are scanned");
+            var bounds = reopened.Store.Snapshot.Bounds;
+            var preview = await reopened.LoadAsync(bounds[0] - 60, bounds[1] + 60);
+            Verification.Check(preview?.Data.Count == 1, "Cached data is queryable before scan");
+            Verification.Check(await reopened.RefreshAsync(true) == null, "Timer cannot start another scan during cached preview");
+        });
+        Verification.Check(previewed && reopened.Store.Snapshot.Counts["CH6"] == 2, "Background open scan picks up newer records after preview");
+        Console.WriteLine("PASS cached preview before scan and subsequent update");
         Console.WriteLine("PASS monitoring session: query ordering, cache-hit cancellation, revision/source isolation, cursor cache, empty live source, failed open, disposal");
     }
 }

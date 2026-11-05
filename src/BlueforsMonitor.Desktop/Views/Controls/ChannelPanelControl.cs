@@ -18,8 +18,14 @@ public sealed class ChannelPanelControl : StackPanel
     readonly CheckBox _multiple = new() { Name = "MultipleAxes", Content = "多纵轴" };
     bool _updating;
     public string[] VisibleChannels => DataStore.Keys.Where(IsChannelVisible).ToArray();
-    public string? SelectedAxis { get => _axisSelector.SelectedItem as string; set => _axisSelector.SelectedItem = value; }
-    public bool MultipleAxes { get => _multiple.IsChecked == true; set => _multiple.IsChecked = value; }
+    public string? SelectedAxis
+    {
+        get => _axisSelector.SelectedItem as string; set => _axisSelector.SelectedItem = value;
+    }
+    public bool MultipleAxes
+    {
+        get => _multiple.IsChecked == true; set => _multiple.IsChecked = value;
+    }
     public event Action? VisibilityChanged;
     public event Action? AxisOptionsChanged;
 
@@ -27,6 +33,7 @@ public sealed class ChannelPanelControl : StackPanel
     {
         Spacing = 3;
         var toggles = new WrapPanel { Orientation = Orientation.Horizontal };
+        var readouts = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         foreach (string key in DataStore.Keys)
         {
             var check = new CheckBox { Name = "Channel" + key, Content = key, FontSize = 11, MinHeight = 26 };
@@ -34,23 +41,29 @@ public sealed class ChannelPanelControl : StackPanel
             _checks[key] = check;
             check.IsCheckedChanged += (_, _) =>
             {
-                if (_updating) return;
+                if (_updating)
+                    return;
                 SyncCards();
                 VisibilityChanged?.Invoke();
             };
-            var content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+            var content = new Grid { Width = 78, ColumnDefinitions = new ColumnDefinitions("*,20") };
             ToolTip.SetTip(check, ChannelName(key));
             content.Children.Add(check);
             var value = Text("—", 12, UiTheme.ChannelResource(key));
             value.Name = "Readout" + key;
             value.FontWeight = FontWeight.Medium;
-            value.MaxWidth = 150;
+            value.Width = 98;
             value.TextTrimming = TextTrimming.CharacterEllipsis;
             _values[key] = value;
-            content.Children.Add(value);
+            var reading = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+            reading.Children.Add(Text(key, 11, UiTheme.ChannelResource(key)));
+            reading.Children.Add(value);
+            reading.Bind(IsVisibleProperty, value.GetObservable(IsVisibleProperty));
+            readouts.Children.Add(reading);
             var mode = Text("手动", 10, "SecondaryText");
             mode.IsVisible = false;
             _modes[key] = mode;
+            Grid.SetColumn(mode, 1);
             content.Children.Add(mode);
             var chip = new Border { CornerRadius = new CornerRadius(4), Padding = new Thickness(6, 0), Margin = new Thickness(0, 0, 6, 3), Child = content };
             chip.Bind(Border.BackgroundProperty, chip.GetResourceObservable("Surface"));
@@ -63,6 +76,7 @@ public sealed class ChannelPanelControl : StackPanel
         _axisSelector.SelectionChanged += (_, _) => { if (!_updating) AxisOptionsChanged?.Invoke(); };
         _multiple.IsCheckedChanged += (_, _) => { if (!_updating) AxisOptionsChanged?.Invoke(); };
         Children.Add(toggles);
+        Children.Add(new ScrollViewer { Content = readouts, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled, Height = 30 });
         SyncCards();
     }
     public void Configure(IEnumerable<string> visible, bool multipleAxes)
@@ -95,7 +109,8 @@ public sealed class ChannelPanelControl : StackPanel
         foreach (var pair in _values)
         {
             pair.Value.IsVisible = IsChannelVisible(pair.Key);
-            if (!IsChannelVisible(pair.Key)) _modes[pair.Key].IsVisible = false;
+            if (!IsChannelVisible(pair.Key))
+                _modes[pair.Key].IsVisible = false;
         }
     }
     static string ChannelName(string key) => key == "CH6" ? "CH6 · 混合室" : key == "CH5" ? "CH5 · Still" : key;

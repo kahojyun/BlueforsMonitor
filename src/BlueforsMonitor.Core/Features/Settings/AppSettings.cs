@@ -11,6 +11,7 @@ public sealed class AppSettings
     public LayoutSettings Layout { get; set; } = new();
     public int Version { get; set; } = 1;
     public string Theme { get; set; } = "跟随系统";
+    public bool AutomaticAxes { get; set; } = true;
     public bool MultipleAxes { get; set; } = true;
     public bool EventBandVisible { get; set; } = true;
     public string? LogRoot

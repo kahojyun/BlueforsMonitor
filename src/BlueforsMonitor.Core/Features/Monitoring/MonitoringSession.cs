@@ -19,6 +19,7 @@ public sealed class MonitoringSession : IDisposable
     long _generation, _dataRevision = -1, _cursorRevision = -1, _cursorBucket = long.MinValue;
     Dictionary<string, Sample[]> _cursorSamples = new();
     bool _closed, _scanBusy, _cursorBusy;
+    int _opening;
     public DataStore Store
     {
         get; private set;
@@ -46,7 +47,7 @@ public sealed class MonitoringSession : IDisposable
 
     bool Current(DataStore store, long generation) => !_closed && generation == _generation && ReferenceEquals(store, Store);
 
-    public async Task<SyncResult?> OpenAsync(string root, Action<string>? progress = null)
+    public async Task<SyncResult?> OpenAsync(string root, Action<string>? progress = null, Func<Task>? cachedReady = null)
     {
         if (_closed)
             return null;
@@ -54,10 +55,32 @@ public sealed class MonitoringSession : IDisposable
         _sourceCancel.Dispose();
         _sourceCancel = new();
         var token = _sourceCancel.Token;
+        _opening++;
         try
         {
             var store = await Task.Run(() => LogImporter.OpenDirectory(root, _cacheRoot), token);
             var importer = new LogImporter(store);
+            bool published = false;
+            void Publish()
+            {
+                _loadCancel?.Cancel();
+                _generation++;
+                Store = store;
+                _importer = importer;
+                Data = null;
+                InvalidateDisplay();
+                InvalidateCursor();
+                published = true;
+            }
+            if (cachedReady != null && store.HasData && !File.Exists(Path.Combine(store.Folder, "pending-refresh.json")))
+            {
+                if (_closed || token.IsCancellationRequested)
+                    return null;
+                Publish();
+                await cachedReady();
+                if (_closed || token.IsCancellationRequested)
+                    return null;
+            }
             var guardedProgress = new Progress<string>(message =>
             {
                 if (!token.IsCancellationRequested)
@@ -66,21 +89,17 @@ public sealed class MonitoringSession : IDisposable
             var result = await Task.Run(() => importer.Sync(true, guardedProgress, token), token);
             if (_closed || token.IsCancellationRequested)
                 return null;
-            _loadCancel?.Cancel();
-            _generation++;
-            Store = store;
-            _importer = importer;
-            Data = null;
-            InvalidateDisplay();
-            InvalidateCursor();
+            if (!published)
+                Publish();
             return result;
         }
         catch (Exception) when (_closed || token.IsCancellationRequested) { return null; }
+        finally { _opening--; }
     }
 
     public async Task<RefreshResult?> RefreshAsync(bool full)
     {
-        if (_closed || _scanBusy || _importer == null)
+        if (_closed || _scanBusy || _opening > 0 || _importer == null)
             return null;
         var store = Store;
         var importer = _importer;
@@ -101,6 +120,23 @@ public sealed class MonitoringSession : IDisposable
         finally { _scanBusy = false; }
     }
 
+    public async Task<bool> CompactAsync()
+    {
+        if (_closed || _scanBusy || _opening > 0 || _importer == null)
+            return false;
+        var importer = _importer;
+        var store = Store;
+        long generation = _generation;
+        var token = _sourceCancel.Token;
+        _scanBusy = true;
+        try
+        {
+            await Task.Run(() => importer.Compact(token), token);
+            return Current(store, generation) && !token.IsCancellationRequested;
+        }
+        catch (Exception) when (!Current(store, generation) || token.IsCancellationRequested) { return false; }
+        finally { _scanBusy = false; }
+    }
     public bool IsMonitoring => _importer != null;
     public void InvalidateDisplay() => _dataRevision = -1;
     public void InvalidateCursor()

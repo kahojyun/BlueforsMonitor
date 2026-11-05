@@ -1,6 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Platform.Storage;
 using Avalonia.Styling;
+using Avalonia.Threading;
 
 namespace BlueforsAvalonia;
 
@@ -54,6 +55,8 @@ public sealed partial class MainWindow
     }
     void ExpandAutomaticAxes()
     {
+        if (!_settings.AutomaticAxes)
+            return;
         _axisController.ExpandAutomatic(_session.Data, _channels.VisibleChannels);
         _plot.Refresh();
     }
@@ -87,31 +90,74 @@ public sealed partial class MainWindow
         _viewModel.Status = "正在索引日志，后台运行中…";
         try
         {
-            var result = await _session.OpenAsync(root, message => _viewModel.Status = message);
+            bool cachedShown = false;
+            var result = await _session.OpenAsync(root, message => _viewModel.Status = message, async () =>
+            {
+                cachedShown = true;
+                var cachedStore = _session.Store;
+                await ShowOpenedSource(root);
+                if (_closed || !ReferenceEquals(cachedStore, _session.Store)) return;
+                _viewModel.Status += " · 已显示缓存，后台检查日志…";
+                await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
+            });
             if (result == null)
                 return;
             var store = _session.Store;
-            ResetSourceView();
-            _settings.LogRoot = root;
-            _settings.Save();
-            _changingUi = true;
-            _follow.IsChecked = _settings.Follow;
-            _changingUi = false;
-            if (store.HasData)
-            {
-                Navigate(store.Snapshot.Bounds[1] - _settings.FollowSeconds, store.Snapshot.Bounds[1], true, false);
-                if (LastLoad != null)
-                    await LastLoad;
-            }
+            if (!cachedShown)
+                await ShowOpenedSource(root);
             else
-                _viewModel.Status = "未找到有效温度、流量或压力记录；将继续每 10 秒检查目录。";
+            {
+                UpdateMetadata();
+                if (double.IsFinite(result.DirtyFrom))
+                {
+                    if (_follow.IsChecked == true)
+                        FollowLatest(false);
+                    else
+                        LastLoad = LoadVisible(true);
+                    if (LastLoad != null)
+                        await LastLoad;
+                    if (_closed || !ReferenceEquals(store, _session.Store)) return;
+                    ExpandAutomaticAxes();
+                }
+                else
+                    _viewModel.Status = "缓存已显示，日志检查完成，无新有效记录。";
+            }
             if (_closed || !ReferenceEquals(store, _session.Store))
                 return;
             if (result.Skipped > 0)
                 _viewModel.Status += $" · 跳过 {result.Skipped} 行或文件";
         }
         catch (OperationCanceledException) { }
-        catch (Exception ex) { _viewModel.Status = "无法打开日志目录：" + ex.Message; }
+        catch (Exception ex) { _viewModel.Status = "无法打开日志目录：" + ex.Message; Console.Error.WriteLine(ex); }
+    }
+    async Task ShowOpenedSource(string root)
+    {
+        var store = _session.Store;
+        ResetSourceView();
+        _settings.LogRoot = root;
+        _settings.Save();
+        _changingUi = true;
+        _follow.IsChecked = _settings.Follow;
+        _changingUi = false;
+        if (store.HasData)
+        {
+            Navigate(store.Snapshot.Bounds[1] - _settings.FollowSeconds, store.Snapshot.Bounds[1], true, false);
+            if (LastLoad != null)
+                await LastLoad;
+        }
+        else
+            _viewModel.Status = "未找到有效温度、流量或压力记录；将继续每 10 秒检查目录。";
+    }
+    async Task CompactIndex()
+    {
+        _viewModel.Status = "正在压缩本机索引；需要临时磁盘空间，日志源文件不变…";
+        try
+        {
+            bool done = await _session.CompactAsync();
+            if (!_closed)
+                _viewModel.Status = done ? "本机索引压缩完成。" : "当前正在索引或更新，请完成后再压缩。";
+        }
+        catch (Exception ex) { _viewModel.Status = "索引压缩未完成，可稍后重试：" + ex.Message; }
     }
     void ResetSourceView()
     {
@@ -184,7 +230,9 @@ public sealed partial class MainWindow
             item.Click += (_, _) => action();
             menu.Items.Add(item);
         }
-        Item("适配选中纵轴", () => FitSelectedAxis());
+        Item("重排全部曲线（R）", () => Arrange());
+        Item("适配选中纵轴（A）", () => FitSelectedAxis());
+        Item("压缩本机索引…", () => _ = CompactIndex());
         Item("显示 / 隐藏事件带", () => { _band.IsVisible = !_band.IsVisible; _settings.EventBandVisible = _band.IsVisible; _settings.Save(); });
         Item("查看全部日志时间范围", () => { if (_session.Store.HasData) Navigate(_session.Store.Snapshot.Bounds[0], _session.Store.Snapshot.Bounds[1], true); });
         Item("标记当前光标", () => { _marker = _cursorTime; _cursorRendered = double.NaN; UpdateOverlay(); });

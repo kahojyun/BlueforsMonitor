@@ -39,6 +39,55 @@ public sealed class DataStore
         connection.Open();
         return connection;
     }
+    // Never hold up live monitoring for a reader in another process.
+    internal void Checkpoint()
+    {
+        try
+        {
+            using var db = Open(true);
+            using var command = db.CreateCommand();
+            command.CommandTimeout = 1;
+            command.CommandText = "PRAGMA busy_timeout=0; PRAGMA wal_checkpoint(TRUNCATE);";
+            command.ExecuteNonQuery();
+        }
+        catch (SqliteException ex) when (ex.SqliteErrorCode is 5 or 6) { }
+    }
+    internal void Compact(CancellationToken token)
+    {
+        using var db = Open(true);
+        using (var tx = db.BeginTransaction())
+        {
+            foreach (var (table, columns, key) in new[] {
+                ("samples", "t REAL,k TEXT,v REAL", "t,k"),
+                ("source_samples", "file_id INTEGER,t REAL,k TEXT,v REAL", "file_id,t,k") })
+            {
+                token.ThrowIfCancellationRequested();
+                using var schema = db.CreateCommand();
+                schema.Transaction = tx;
+                schema.CommandText = "SELECT sql FROM sqlite_master WHERE name=$name";
+                schema.Parameters.AddWithValue("$name", table);
+                if (((string?)schema.ExecuteScalar())?.Contains("WITHOUT ROWID", StringComparison.OrdinalIgnoreCase) == true)
+                    continue;
+                using var migrate = db.CreateCommand();
+                migrate.Transaction = tx;
+                migrate.CommandTimeout = 0;
+                migrate.CommandText = $"CREATE TABLE {table}_compact({columns},PRIMARY KEY({key})) WITHOUT ROWID; INSERT INTO {table}_compact SELECT * FROM {table}; DROP TABLE {table}; ALTER TABLE {table}_compact RENAME TO {table};";
+                migrate.ExecuteNonQuery();
+            }
+            using var indexes = db.CreateCommand();
+            indexes.Transaction = tx;
+            indexes.CommandTimeout = 0;
+            indexes.CommandText = "CREATE INDEX IF NOT EXISTS source_times ON source_samples(t,k); CREATE INDEX IF NOT EXISTS channel_times ON samples(k,t);";
+            indexes.ExecuteNonQuery();
+            token.ThrowIfCancellationRequested();
+            tx.Commit();
+        }
+        using var vacuum = db.CreateCommand();
+        vacuum.CommandTimeout = 0;
+        vacuum.CommandText = "VACUUM; PRAGMA optimize;";
+        vacuum.ExecuteNonQuery();
+        Checkpoint();
+    }
     public static int ResolutionFor(double span) => span <= 3 * 86400 ? 0 : span <= 35 * 86400 ? 1800 : 21600;
     public WindowData Read(double left, double right, double span, CancellationToken token)
     {

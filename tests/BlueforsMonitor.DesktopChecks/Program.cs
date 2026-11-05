@@ -79,11 +79,17 @@ public sealed class CheckApp : App
             Field<TextBlock>(w, "_sourceInfo").Text == model.Source &&
             eventList.CountText == model.EventCount && eventList.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == model.EventCount), "Compiled bindings must propagate property changes");
         Require(!Field<MonitoringSession>(w, "_session").Store.HasData, "First launch must be empty");
+        var emptyAxes = Field<AxisController>(w, "_axisController");
+        var emptyPlot = Field<AvaPlot>(w, "_plot").Plot;
+        Require(emptyPlot.Axes.GetYAxes().Count(a => emptyAxes.Axes.Values.Contains(a)) == channels.VisibleChannels.Length, "Empty launch must not attach unchecked channel axes");
         string logs = Path.Combine(AppSettings.Root, "logs");
         Directory.CreateDirectory(logs);
         string file = Path.Combine(logs, "CH6 T 26-11-05.log");
         File.WriteAllLines(file, Enumerable.Range(0, 60).Select(i => $"05-11-26,10:{i:00}:00,{(i >= 20 && i <= 22 ? "0.028" : "0.012")}"));
         await (Task)Call(w, "OpenLogs", logs)!;
+        Require(w.LastLoad != null && Field<AvaPlot>(w, "_plot").Plot.GetPlottables<ScottPlot.Plottables.Scatter>().Any(), "First plot loads while the date panel remains collapsed");
+        dateToggle.IsChecked = true;
+        await Task.Delay(100);
         var store = Field<MonitoringSession>(w, "_session").Store;
         Require(store.Snapshot.Events.Length == 1, "Event indexing");
         var plot = Field<AvaPlot>(w, "_plot");
@@ -254,7 +260,50 @@ public sealed class CheckApp : App
         Require(Field<AxisController>(w, "_axisController").Right == start + 3660, "Follow did not advance");
         await CheckLayout(w, plot, dateRange, eventList, dateToggle, focusToggle);
         await CheckTemperatureUnits(w, channels, eventList);
+        await CheckWorkflow(w, channels);
 
+    }
+    static async Task CheckWorkflow(MainWindow w, ChannelPanelControl channels)
+    {
+        var plot = Field<AvaPlot>(w, "_plot");
+        var axes = Field<AxisController>(w, "_axisController");
+        var boxes = channels.GetVisualDescendants().OfType<CheckBox>().Where(c => c.Name?.StartsWith("Channel") == true).ToArray();
+        var positions = boxes.Select(b => b.TranslatePoint(default, w)!.Value).ToArray();
+        foreach (var key in DataStore.Keys)
+            channels.SetReadout(key, "123456789012345 mK", "test");
+        await Task.Delay(100);
+        Require(boxes.Select((b, i) => b.TranslatePoint(default, w)!.Value == positions[i]).All(v => v), "Readout width cannot move channel checkboxes");
+        Call(w, "ZoomChannel", "CH6", .8, 850d);
+        Require(axes.ManualChannels.Contains("CH6"), "Manual setup");
+        plot.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.R });
+        Require(axes.ManualChannels.Count == 0, "R shortcut rearranges and restores automatic modes");
+        Call(w, "ZoomChannel", "CH6", .8, 850d);
+        var editor = w.GetVisualDescendants().OfType<TextBox>().First();
+        editor.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.R });
+        Require(axes.ManualChannels.Contains("CH6"), "Typing R in editors must not rearrange");
+        plot.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.A });
+        Require(!axes.ManualChannels.Contains("CH6"), "A shortcut fits the selected axis");
+        Call(w, "ZoomChannel", "CH6", .8, 850d);
+        double min = axes.Axes["CH6"].Min, max = axes.Axes["CH6"].Max;
+        var automatic = w.GetVisualDescendants().OfType<CheckBox>().Single(c => c.Name == "AutomaticAxes");
+        automatic.IsChecked = false;
+        Require(!AppSettings.Load().AutomaticAxes, "Automatic axis option persists");
+        plot.Plot.Axes.SetLimitsY(0, 1, axes.Axes["CH5"]);
+        Call(w, "ExpandAutomaticAxes");
+        Require(axes.Axes["CH5"].Min == 0 && axes.Axes["CH5"].Max == 1, "Disabled auto-axis also prevents follow-time expansion");
+        automatic.IsChecked = true;
+        Require(axes.Axes["CH6"].Min == min && axes.Axes["CH6"].Max == max, "Automatic axis option preserves manually adjusted channels");
+        channels.SetChannelVisible("P2", true);
+        await Task.Delay(100);
+        var header = (HeaderRightAxis)axes.Axes["P2"];
+        Require(header.HeaderRect.Bottom <= plot.Plot.LastRender.DataRect.Top, "Channel headings are above data area");
+        using var font = SkiaSharp.SKTypeface.FromFamilyName(UiTheme.PlotFont);
+        Require(font.ContainsGlyphs("温度原值"), "Resolved plot font supports Chinese glyphs");
+        Capture(w, "workflow-dark");
+        Call(w, "SetTheme", "浅色");
+        await Task.Delay(100);
+        Capture(w, "workflow-light");
+        Console.WriteLine("PASS workflow: stable checkboxes, R/A shortcuts and editor isolation, auto-axis preference, manual preservation, top labels and CJK glyphs");
     }
     static async Task CheckTemperatureUnits(MainWindow w, ChannelPanelControl channels, EventListControl events)
     {

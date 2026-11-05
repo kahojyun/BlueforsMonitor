@@ -26,6 +26,7 @@ public sealed partial class MainWindow : Window
     readonly EventBand _band = new();
     readonly TextBlock _status = Text("正在载入…", 11, "SecondaryText");
     readonly TextBlock _cursorLabel = Text("移动光标查看原始记录", 12, "CursorText");
+    readonly CheckBox _autoAxes = new() { Name = "AutomaticAxes", Content = "自动轴", VerticalAlignment = VerticalAlignment.Center };
     readonly CheckBox _follow = new() { Content = "跟随最新", VerticalAlignment = VerticalAlignment.Center };
     readonly ComboBox _span = new() { ItemsSource = new[] { "1 小时", "6 小时", "24 小时", "7 天", "30 天" }, Width = 92 };
     readonly TextBlock _sourceInfo = Text("", 11, "SecondaryText");
@@ -55,7 +56,7 @@ public sealed partial class MainWindow : Window
     {
         _session = new MonitoringSession(store, AppSettings.Root);
         _axisController = new AxisController(_plot.Plot, _dark);
-        Title = "Bluefors Monitor · Avalonia 0.4";
+        Title = "Bluefors Monitor · Avalonia 0.5";
         Width = 1460;
         Height = 980;
         MinWidth = 1000;
@@ -69,6 +70,8 @@ public sealed partial class MainWindow : Window
         _eventList.Bind(EventListControl.CountTextProperty, Avalonia.Data.CompiledBinding.Create((MonitorViewModel model) => model.EventCount));
         BuildUi();
         ConfigurePlot();
+        SyncAxes();
+        AddHandler(KeyDownEvent, HandlePlotShortcut, RoutingStrategies.Bubble);
         ActualThemeVariantChanged += (_, _) => ApplyPalette();
         SetTheme(_settings.Theme);
         _loadTimer.Tick += (_, _) => { _loadTimer.Stop(); LastLoad = LoadVisible(); };
@@ -127,6 +130,12 @@ public sealed partial class MainWindow : Window
         AddTool(_follow);
         AddTool(_span);
         AddTool(Button("刷新", () => _ = SyncCurrent(true)));
+        AddTool(Button("重排 R", () => Arrange()));
+        AddTool(Button("适配 A", () => FitSelectedAxis()));
+        _autoAxes.IsChecked = _settings.AutomaticAxes;
+        ToolTip.SetTip(_autoAxes, "随当前视野自动适配未手动调整的纵轴；R 重排可恢复所有轴为自动");
+        _autoAxes.IsCheckedChanged += (_, _) => { _settings.AutomaticAxes = _autoAxes.IsChecked == true; _settings.Save(); if (_settings.AutomaticAxes) Arrange(true); };
+        AddTool(_autoAxes);
         AddTool(_dateToggle);
         AddTool(_focusToggle);
         var more = new Button { Content = "更多", Padding = new Thickness(12, 7) };
@@ -213,7 +222,7 @@ public sealed partial class MainWindow : Window
         _status.TextTrimming = TextTrimming.CharacterEllipsis;
         Put(footer, _status, 0);
         var help = Text("操作帮助 · UTC+08:00", 10, "SecondaryText");
-        ToolTip.SetTip(help, "图内拖动 / 滚轮：平移 / 缩放时间\n纵轴拖动 / 滚轮：仅调整该通道\n事件单击高亮、双击回看；右键查看更多操作");
+        ToolTip.SetTip(help, "图内拖动 / 滚轮：平移 / 缩放时间\n纵轴拖动 / 滚轮：仅调整该通道\nR / 图内双击：重排；A / 纵轴双击：适配选中轴\n事件单击高亮、双击回看；右键查看更多操作");
         Put(footer, help, 1);
         Put(root, footer, 0, 5);
         InitializeLayout();
@@ -224,7 +233,7 @@ public sealed partial class MainWindow : Window
         var plot = _plot.Plot;
         plot.FigureBackground.Color = SColor.FromHex(UiTheme.Hex("Plot", _dark));
         plot.DataBackground.Color = SColor.FromHex(UiTheme.Hex("Plot", _dark));
-        plot.Font.Set(UiTheme.Font);
+        plot.Font.Set(UiTheme.PlotFont);
         plot.Axes.Color(SColor.FromHex(UiTheme.Hex("Axis", _dark)));
         plot.Axes.Left.IsVisible = false;
         plot.Axes.Right.IsVisible = false;
@@ -279,6 +288,8 @@ public sealed partial class MainWindow : Window
                 Arrange();
                 _arrangePending = false;
             }
+            else if (_settings.AutomaticAxes)
+                Arrange(true);
             var data = result.Data;
             _viewModel.Status = $"{data.Count:N0} 个绘图点 · {(data.Resolution == 0 ? "原始样本" : $"{data.Resolution / 60} 分钟极值概览")} · 读取 {data.Milliseconds:F0} ms / 准备绘图 {drawTimer.Elapsed.TotalMilliseconds:F0} ms · 光标查原始记录 · 共 {_session.Store.Snapshot.Counts.Values.Sum():N0} 条";
             if (result.Changed)
@@ -358,6 +369,18 @@ public sealed partial class MainWindow : Window
         var point = e.GetPosition(_plot);
         var rect = DataRect();
         var key = AxisAt(point);
+        if (e.ClickCount == 2)
+        {
+            if (key != null)
+            {
+                _channels.SelectedAxis = key;
+                FitSelectedAxis();
+            }
+            else if (rect.Contains(point))
+                Arrange();
+            e.Handled = true;
+            return;
+        }
         if (!rect.Contains(point) && key == null)
             return;
         _dragging = true;
@@ -444,6 +467,24 @@ public sealed partial class MainWindow : Window
         _axisController.Zoom(key, factor, anchor);
         UpdateModes();
         _plot.Refresh();
+    }
+    void HandlePlotShortcut(object? sender, KeyEventArgs e)
+    {
+        // Keep text/date editing and popup interactions untouched.
+        if (e.KeyModifiers != KeyModifiers.None || e.Source is not Avalonia.Visual visual)
+            return;
+        if (visual is TextBox || Avalonia.VisualTree.VisualExtensions.GetVisualAncestors(visual).Any(v => v is TextBox or ComboBox or CalendarDatePicker or TimePicker))
+            return;
+        if (e.Key == Key.R)
+        {
+            Arrange();
+            e.Handled = true;
+        }
+        else if (e.Key == Key.A)
+        {
+            FitSelectedAxis();
+            e.Handled = true;
+        }
     }
     void QueueLoad()
     {

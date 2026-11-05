@@ -60,13 +60,18 @@ public sealed class AxisController
     public AxisController(ScottPlot.Plot plot, bool dark)
     {
         _plot = plot;
+        _plot.Axes.Title.MinimumSize = 25;
         for (int i = 0; i < DataStore.Keys.Length; i++)
         {
             var key = DataStore.Keys[i];
-            var axis = _plot.Axes.AddRightAxis();
+            var axis = new HeaderRightAxis();
+            _plot.Axes.AddRightAxis(axis);
             axis.Color(SColor.FromHex(UiTheme.Channel(key, dark)));
             axis.LabelStyle.Text = key + " · " + Unit(key);
             axis.LabelStyle.FontSize = 10;
+            axis.LabelStyle.FontName = UiTheme.PlotFont;
+            axis.LabelStyle.IsVisible = false;
+            axis.TickLabelStyle.FontName = UiTheme.PlotFont;
             axis.TickLabelStyle.FontSize = 10;
             axis.MinimumSize = key == "P2" ? 80 : 65;
             axis.TickGenerator = new ScottPlot.TickGenerators.NumericAutomatic { TargetTickCount = 4, LabelFormatter = v => v.ToString("G5", CultureInfo.InvariantCulture) };
@@ -97,6 +102,9 @@ public sealed class AxisController
     }
     public string? AxisAt(ScottPlot.Pixel point)
     {
+        foreach (var pair in _axes)
+            if (pair.Value.IsVisible && pair.Value is HeaderRightAxis header && header.HeaderRect.Contains(point))
+                return pair.Key;
         var axis = _plot.GetAxis(point);
         return _axes.FirstOrDefault(p => ReferenceEquals(p.Value, axis)).Key;
     }
@@ -126,7 +134,10 @@ public sealed class AxisController
     {
         // Hidden axes must leave the layout, not just stop painting their ticks.
         foreach (var axis in _axes.Values)
+        {
+            axis.IsVisible = false;
             _plot.Axes.Remove(axis);
+        }
         foreach (var key in visible)
         {
             _axes[key].IsVisible = multiple || key == selected;

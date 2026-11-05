@@ -7,6 +7,12 @@ namespace BlueforsAvalonia;
 
 public static class UiTheme
 {
+    public static string PlotFont { get; } = ResolvePlotFont();
+    static string ResolvePlotFont()
+    {
+        using var face = SkiaSharp.SKFontManager.Default.MatchCharacter('温');
+        return face?.FamilyName ?? Font;
+    }
     public static string Font => OperatingSystem.IsWindows() ? "Microsoft YaHei" : OperatingSystem.IsMacOS() ? "PingFang SC" : "Noto Sans CJK SC";
     public static readonly Dictionary<string, (string Dark, string Light)> Channels = new()
     {

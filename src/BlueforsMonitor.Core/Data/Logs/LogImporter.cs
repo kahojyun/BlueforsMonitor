@@ -32,11 +32,11 @@ public sealed class LogImporter
         using var cmd = db.CreateCommand();
         cmd.CommandText = """
             PRAGMA journal_mode=WAL;
-            CREATE TABLE IF NOT EXISTS samples(t REAL,k TEXT,v REAL,PRIMARY KEY(t,k));
+            CREATE TABLE IF NOT EXISTS samples(t REAL,k TEXT,v REAL,PRIMARY KEY(t,k)) WITHOUT ROWID;
             CREATE TABLE IF NOT EXISTS files(path TEXT PRIMARY KEY,pos INTEGER,mtime REAL);
             CREATE TABLE IF NOT EXISTS overview(day INTEGER PRIMARY KEY,payload BLOB);
             CREATE TABLE IF NOT EXISTS source_files(id INTEGER PRIMARY KEY,path TEXT UNIQUE,position INTEGER NOT NULL DEFAULT 0,size INTEGER NOT NULL DEFAULT 0,mtime INTEGER NOT NULL DEFAULT 0,head TEXT NOT NULL DEFAULT '');
-            CREATE TABLE IF NOT EXISTS source_samples(file_id INTEGER,t REAL,k TEXT,v REAL,PRIMARY KEY(file_id,t,k));
+            CREATE TABLE IF NOT EXISTS source_samples(file_id INTEGER,t REAL,k TEXT,v REAL,PRIMARY KEY(file_id,t,k)) WITHOUT ROWID;
             CREATE INDEX IF NOT EXISTS source_times ON source_samples(t,k);
             CREATE INDEX IF NOT EXISTS channel_times ON samples(k,t);
             """;
@@ -101,7 +101,19 @@ public sealed class LogImporter
         gate.Wait(token);
         try
         {
-            return SyncCore(forceFull, progress, token);
+            var result = SyncCore(forceFull, progress, token);
+            _store.Checkpoint();
+            return result;
+        }
+        finally { gate.Release(); }
+    }
+    public void Compact(CancellationToken token = default)
+    {
+        var gate = Gates.GetOrAdd(_store.Folder, _ => new SemaphoreSlim(1));
+        gate.Wait(token);
+        try
+        {
+            _store.Compact(token);
         }
         finally { gate.Release(); }
     }
@@ -298,9 +310,12 @@ public sealed class LogImporter
             build.Parameters.Add("$d", SqliteType.Integer);
             build.Parameters.Add("$p", SqliteType.Blob);
             build.Prepare();
+            int built = 0;
             foreach (int day in dirtyDays.Order())
             {
                 token.ThrowIfCancellationRequested();
+                if (built++ % 10 == 0)
+                    progress?.Report($"正在生成历史概览 {built} / {dirtyDays.Count} 天…");
                 var raw = _store.ReadRange(day * 86400d, (day + 1) * 86400d - .001);
                 Dictionary<string, object> Level(int width) => raw.Where(kv => kv.Value.Length > 0).ToDictionary(kv => kv.Key, kv => { var r = DataStore.Reduce(kv.Value, width); return (object)new object[] { r.Points.Select(p => new[] { p.T, p.V }).ToArray(), r.Gaps.Order().ToArray() }; });
                 var levels = new Dictionary<string, object> { { "1800", Level(1800) }, { "21600", Level(21600) } };
@@ -319,6 +334,7 @@ public sealed class LogImporter
                 r.Read();
                 range = r.IsDBNull(0) ? [0, 0] : [r.GetDouble(0), r.GetDouble(1)];
             }
+            progress?.Report("正在更新升温事件…");
             var old = _store.Snapshot.Events;
             var anchor = old.FirstOrDefault(e => e.Recovered && e.End < dirtyFrom - 1800);
             double cutoff = anchor?.End ?? range[0] - 1;

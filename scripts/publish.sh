@@ -12,3 +12,7 @@ if [[ "$rid" == osx-* ]]; then
   cp -R "$destination/." "$bundle/MacOS/"
   cp packaging/Info.plist "$bundle/Info.plist"
 fi
+
+if [[ "$rid" == "win-x64" ]]; then
+  python3 scripts/package_windows.py "$destination" "artifacts/BlueforsMonitor-win-x64.zip"
+fi

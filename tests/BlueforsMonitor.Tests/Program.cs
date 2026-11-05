@@ -28,6 +28,7 @@ try
     File.WriteAllText(settingsFile, "{\"Layout\":{\"EventPanelHeight\":-10}}");
     Verification.Check(AppSettings.Load().Layout.EventPanelHeight == 120, "Invalid panel height is clamped");
     BackendVerification.Run(scratch);
+    StorageChecks.Run(scratch);
     await MonitoringSessionChecks.Run(scratch);
     if (args.Length == 2 && args[0] == "--reference")
     {

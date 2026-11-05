@@ -42,6 +42,9 @@ public sealed class DateTimeField : StackPanel
     }
     public void Set(double unix)
     {
+        // The date panel starts collapsed. CalendarDatePicker needs its calendar part
+        // before Text parsing, even when it has not participated in layout yet.
+        Date.ApplyTemplate();
         var value = Clock.At(unix);
         Date.SelectedDate = value.Date;
         Date.DisplayDate = value.Date;
