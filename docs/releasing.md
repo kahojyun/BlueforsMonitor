@@ -22,10 +22,12 @@
 - `BUILD-INFO.json`：源码提交、SDK、运行时、构建平台及 workflow run；每个平台包内也保留自己的构建信息。
 - `SHA256SUMS`：两个 ZIP 和构建信息的 SHA-256。
 
-macOS/Linux 在下载目录运行 `shasum -a 256 -c SHA256SUMS`。Windows 可用 `Get-FileHash 文件名 -Algorithm SHA256` 与清单逐项对照。校验值用于确认下载完整性；当前包未进行平台代码签名或 macOS 公证。
+macOS/Linux 在下载目录运行 `shasum -a 256 -c SHA256SUMS`。Windows 可用 `Get-FileHash 文件名 -Algorithm SHA256` 与清单逐项对照。校验值用于确认下载完整性；macOS 包已进行 ad-hoc 签名，但未进行 Developer ID 签名或公证；首次下载仍可能需要在系统设置中允许打开。Windows 包未进行代码签名。
 
 ## 本地打包
 
 安装 `global.json` 指定的 SDK 和 Python 3，运行 `bash scripts/publish.sh osx-arm64` 或 Windows PowerShell 的 `./scripts/publish.ps1`。输出位于 `artifacts/release/`，文件名包含版本；包自带 .NET 运行时。
 
 Windows 启动器需要 Zig，或已初始化的 VS x64 开发者环境中的 cl.exe。macOS bundle 必须在 macOS 上生成。脚本允许本地未提交构建并标记 dirty，但草稿流程拒绝这种包。发布校验测试：`python -m unittest discover -s tests/release -v`。
+
+macOS 打包会按内部 Mach-O 文件、外层 app 的顺序执行 ad-hoc 签名，再运行严格签名验证；生成 ZIP 后重新解压，再验证全部原生文件及 app 的签名，并启动解压后的程序运行 10 秒，检测启动时崩溃或运行库缺失。任一步失败都会阻止上传。此流程不启用 Hardened Runtime；未来采用 Developer ID/公证时需单独配置 .NET JIT 权限并验证。

@@ -105,6 +105,55 @@ def validate_archive(path, runtime, expected_version):
         return metadata
 
 
+def mac_native_files(app):
+    # Check magic rather than suffix: .NET also ships extensionless helpers.
+    magic = {b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe", b"\xfe\xed\xfa\xcf",
+             b"\xfe\xed\xfa\xce", b"\xca\xfe\xba\xbe", b"\xca\xfe\xba\xbf"}
+    for path in sorted((app / "Contents").rglob("*")):
+        if path.is_file() and not path.is_symlink():
+            with path.open("rb") as stream:
+                if stream.read(4) in magic:
+                    yield path
+
+
+def verify_mac_bundle(app):
+    for path in mac_native_files(app):
+        run(["/usr/bin/codesign", "--verify", "--strict", "--verbose=2", str(path)])
+    run(["/usr/bin/codesign", "--verify", "--deep", "--strict", "--verbose=2", str(app)])
+
+
+def sign_mac_bundle(app):
+    # Sign inside-out. Ad-hoc testing does not enable Hardened Runtime, so .NET
+    # JIT needs no exception entitlements. Developer ID/notarization is separate.
+    info = plistlib.loads((app / "Contents/Info.plist").read_bytes())
+    main = app / "Contents/MacOS" / info["CFBundleExecutable"]
+    for path in mac_native_files(app):
+        if path == main:
+            continue  # Signing the outer bundle signs its main executable.
+        run(["/usr/bin/codesign", "--force", "--sign", "-", "--options", "0",
+             "--timestamp=none", str(path)])
+    run(["/usr/bin/codesign", "--force", "--sign", "-", "--options", "0",
+         "--timestamp=none", str(app)])
+    verify_mac_bundle(app)
+
+
+def smoke_mac_bundle(app):
+    process = subprocess.Popen([str(app / "Contents/MacOS/BlueforsAvalonia")], cwd=app.parent)
+    try:
+        code = process.wait(timeout=10)
+        raise ValueError(f"macOS app exited during startup: {code}")
+    except subprocess.TimeoutExpired:
+        print("PASS extracted macOS app startup (10 seconds)")
+    finally:
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+
+
 def build(runtime, output):
     value = version()
     output = Path(output).resolve()
@@ -128,6 +177,7 @@ def build(runtime, output):
         runtime_config = json.loads((publish / "BlueforsAvalonia.runtimeconfig.json").read_text(encoding="utf-8"))
         metadata = {
             "version": value, "commit": commit, "dirty": dirty, "runtime": runtime,
+            "code_signing": "ad-hoc" if runtime == "osx-arm64" else "unsigned",
             "dotnet_sdk": sdk, "frameworks": runtime_config["runtimeOptions"].get("includedFrameworks", []),
             "python": platform.python_version(), "build_os": platform.platform(),
             "runner_image": os.environ.get("ImageOS"), "runner_image_version": os.environ.get("ImageVersion"),
@@ -147,6 +197,20 @@ def build(runtime, output):
             shutil.copytree(publish, contents / "MacOS")
             resources = contents / "Resources"
             resources.mkdir()
+            # Managed assemblies/configuration are resources, not native code.
+            # Keep relative lookup working without sealing them as nested code.
+            managed = resources / "runtime"
+            managed.mkdir()
+            native = set(mac_native_files(app))
+            for path in sorted((contents / "MacOS").iterdir()):
+                if path.is_file() and path not in native:
+                    shutil.move(str(path), managed / path.name)
+                    path.symlink_to(Path("../Resources/runtime") / path.name)
+            # .NET resolves the managed entry assembly's symlink before locating
+            # its self-contained runtime. Expose native siblings at that base too.
+            for path in native:
+                if path.parent == contents / "MacOS":
+                    (managed / path.name).symlink_to(Path("../../MacOS") / path.name)
             for name in ("LICENSE", "THIRD_PARTY_NOTICES.md"):
                 shutil.copy2(ROOT / name, resources / name)
             shutil.copytree(ROOT / "licenses", resources / "licenses")
@@ -154,7 +218,12 @@ def build(runtime, output):
             info = plistlib.loads((ROOT / "packaging/Info.plist.template").read_bytes())
             info.update(CFBundleShortVersionString=value, CFBundleVersion=value)
             (contents / "Info.plist").write_bytes(plistlib.dumps(info, sort_keys=False))
+            sign_mac_bundle(app)
             run(["/usr/bin/ditto", "-c", "-k", "--sequesterRsrc", "--keepParent", str(app), str(archive)])
+            extracted = scratch / "extracted"
+            run(["/usr/bin/ditto", "-x", "-k", str(archive), str(extracted)])
+            verify_mac_bundle(extracted / app.name)
+            smoke_mac_bundle(extracted / app.name)
         validate_archive(archive, runtime, value)
         write_json(output / f"build-info-{runtime}.json", metadata)
         # Single-platform local builds have their own checksums; aggregation replaces these.
