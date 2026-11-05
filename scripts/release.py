@@ -110,7 +110,7 @@ def build(runtime, output):
     output = Path(output).resolve()
     output.mkdir(parents=True, exist_ok=True)
     sdk = command(["dotnet", "--version"])
-    if sdk != json.loads((ROOT / "global.json").read_text())["sdk"]["version"]:
+    if sdk != json.loads((ROOT / "global.json").read_text(encoding="utf-8"))["sdk"]["version"]:
         raise ValueError("Build SDK does not match global.json")
     compiled_version = command(["dotnet", "msbuild", "src/BlueforsMonitor.Desktop", "-getProperty:Version", "-nologo"])
     if compiled_version != value:
@@ -125,7 +125,7 @@ def build(runtime, output):
         publish = scratch / "publish"
         run(["dotnet", "publish", "src/BlueforsMonitor.Desktop", "-c", "Release", "-r", runtime,
              "--self-contained", "true", "-p:RestoreLockedMode=true", "-p:UseSharedCompilation=false", "-o", str(publish)])
-        runtime_config = json.loads((publish / "BlueforsAvalonia.runtimeconfig.json").read_text())
+        runtime_config = json.loads((publish / "BlueforsAvalonia.runtimeconfig.json").read_text(encoding="utf-8"))
         metadata = {
             "version": value, "commit": commit, "dirty": dirty, "runtime": runtime,
             "dotnet_sdk": sdk, "frameworks": runtime_config["runtimeOptions"].get("includedFrameworks", []),

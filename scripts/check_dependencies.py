@@ -12,19 +12,19 @@ def locked_packages():
     if not locks:
         raise ValueError('No packages.lock.json files found')
     for path in locks:
-        for target in json.loads(path.read_text())['dependencies'].values():
+        for target in json.loads(path.read_text(encoding="utf-8"))['dependencies'].values():
             for name, value in target.items():
                 if value['type'].lower() != 'project':
                     result.add((name.lower(), value['resolved']))
     return result
 
 def main():
-    data = json.loads((ROOT / 'licenses/inventory.json').read_text())
+    data = json.loads((ROOT / 'licenses/inventory.json').read_text(encoding="utf-8"))
     reviewed = {(p['package'].lower(), p['version']) for p in data['packages']}
     actual = locked_packages()
     if actual != reviewed:
         raise ValueError(f'Unreviewed packages: {sorted(actual-reviewed)}; obsolete inventory: {sorted(reviewed-actual)}')
-    notices = (ROOT / 'THIRD_PARTY_NOTICES.md').read_text()
+    notices = (ROOT / 'THIRD_PARTY_NOTICES.md').read_text(encoding="utf-8")
     for package in data['packages']:
         label = f"| [{package['package']}](https://www.nuget.org/packages/{package['package']}/{package['version']}) | {package['version']} |"
         if label not in notices:
