@@ -1,0 +1,49 @@
+using BlueforsAvalonia;
+string scratch = Path.Combine(Path.GetTempPath(), "bluefors-tests-" + Guid.NewGuid().ToString("N"));
+try
+{
+    Verification.Check(new AppSettings().Theme == "跟随系统", "Default theme");
+    Verification.Check(!new DataStore(scratch).HasData, "Fresh launch must be empty");
+    Verification.Check(DataStore.Nearest([new Sample(0, 1)], 91) is null, "Stale cursor sample");
+    var reduced = DataStore.Reduce([new(0, 1), new(60, 9), new(120, -2), new(2000, 4)], 1800);
+    Verification.Check(reduced.Points.Any(p => p.V == 9) && reduced.Points.Any(p => p.V == -2) && reduced.Gaps.Contains(2000), "Overview extrema and gaps");
+    var parser = new LogParser();
+    Verification.Check(parser.Parse("CH6 T test.log", "05-11-26,10:00:00,0.012").Single().K == "CH6", "Temperature parser");
+    Verification.Check(parser.Parse("Flowmeter test.log", "05-11-26,10:00:00,Infinity").Count == 0, "Finite values only");
+    var time = Clock.Unix(new DateTime(2026, 11, 5, 10, 0, 0));
+    Verification.Check(Math.Abs(Clock.FromPlot(Clock.Plot(time)) - time) < 1, "Timezone roundtrip");
+    AppSettings.SettingsDirectory = Path.Combine(scratch, "settings");
+    new AppSettings { Theme = "浅色", LogRoot = "example" }.Save();
+    Verification.Check(AppSettings.Load().Theme == "浅色" && AppSettings.Load().LogRoot == "example", "Settings persistence");
+    BackendVerification.Run(scratch);
+    if (args.Length == 2 && args[0] == "--reference")
+    {
+        var reference = new DataStore(args[1]);
+        var events = EventDetector.Detect(reference.ReadChannel("CH6"));
+        Verification.Check(events.Count == reference.Snapshot.Events.Length, "Reference event count");
+        foreach (var pair in events.Zip(reference.Snapshot.Events))
+            Verification.Check(pair.First with
+            {
+                Detail = ""
+            } == pair.Second with
+            {
+                Detail = ""
+            }, "Reference event fields");
+        Console.WriteLine($"PASS {events.Count} reference events");
+    }
+    Console.WriteLine("All regression checks passed.");
+    return 0;
+}
+catch (Exception ex) { Console.Error.WriteLine(ex); return 1; }
+finally { Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools(); if (Directory.Exists(scratch)) Directory.Delete(scratch, true); }
+namespace BlueforsAvalonia
+{
+    public static class Verification
+    {
+        public static void Check(bool value, string message)
+        {
+            if (!value)
+                throw new InvalidOperationException(message);
+        }
+    }
+}
