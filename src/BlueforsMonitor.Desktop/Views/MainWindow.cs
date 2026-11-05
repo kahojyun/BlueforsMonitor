@@ -29,7 +29,6 @@ public sealed partial class MainWindow : Window
     readonly EventBand _band = new();
     readonly TextBlock _status = Text("正在载入…", 11, "SecondaryText");
     readonly TextBlock _cursorLabel = Text("移动光标查看原始记录", 12, "CursorText");
-    readonly ComboBox _theme = new() { ItemsSource = new[] { "深色", "浅色", "跟随系统" }, Width = 110 };
     readonly CheckBox _follow = new() { Content = "跟随最新", VerticalAlignment = VerticalAlignment.Center };
     readonly ComboBox _span = new() { ItemsSource = new[] { "1 小时", "6 小时", "24 小时", "7 天", "30 天" }, Width = 92 };
     readonly TextBlock _sourceInfo = Text("", 11, "SecondaryText");
@@ -71,8 +70,8 @@ public sealed partial class MainWindow : Window
         Title = "Bluefors Monitor · Avalonia 0.4";
         Width = 1460;
         Height = 980;
-        MinWidth = 1280;
-        MinHeight = 820;
+        MinWidth = 1000;
+        MinHeight = 640;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         this.Bind(BackgroundProperty, this.GetResourceObservable("Page"));
         FontFamily = new FontFamily(UiTheme.Font);
@@ -105,27 +104,15 @@ public sealed partial class MainWindow : Window
     }
     void BuildUi()
     {
-        var root = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,Auto,*,Auto,Auto,Auto,Auto"), Margin = new Thickness(22, 17, 22, 12), RowSpacing = 9 };
+        var root = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,Auto,Auto,*,Auto"), Margin = new Thickness(12, 8), RowSpacing = 5 };
         Content = root;
-        var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 15 };
-        var title = new StackPanel { Spacing = 5 };
-        var titleLine = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 14 };
-        var heading = Text("低温事件观察", 23, "Heading");
-        heading.FontWeight = FontWeight.SemiBold;
-        titleLine.Children.Add(heading);
-        titleLine.Children.Add(Text("BLUEFORS  /  0.4", 11, "AccentText"));
-        title.Children.Add(titleLine);
-        _sourceInfo.TextTrimming = TextTrimming.CharacterEllipsis;
-        title.Children.Add(_sourceInfo);
-        Put(header, title, 0);
-        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
-        actions.Children.Add(Button("选择 Logfiles…", () => _ = ChooseLogs()));
-        _theme.SelectedItem = _settings.Theme;
-        _theme.SelectionChanged += (_, _) => { if (_theme.SelectedItem is string mode) SetTheme(mode); };
-        actions.Children.Add(_theme);
-        Put(header, actions, 1);
-        Put(root, header, 0, 0);
-        var toolbar = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 7 };
+        var toolbar = new WrapPanel { Orientation = Orientation.Horizontal };
+        void AddTool(Control control)
+        {
+            control.Margin = new Thickness(0, 0, 7, 0);
+            toolbar.Children.Add(control);
+        }
+        AddTool(Button("选择 Logfiles…", () => _ = ChooseLogs()));
         _span.SelectedIndex = Math.Max(0, Array.IndexOf(_spans, _settings.FollowSeconds));
         _follow.IsChecked = false;
         _follow.IsCheckedChanged += (_, _) =>
@@ -149,21 +136,43 @@ public sealed partial class MainWindow : Window
                 Navigate(anchor - _settings.FollowSeconds, anchor, true, false);
             }
         };
-        toolbar.Children.Add(_follow);
-        toolbar.Children.Add(_span);
-        toolbar.Children.Add(Button("全部历史", () => { if (_store.HasData) Navigate(_store.Snapshot.Bounds[0], _store.Snapshot.Bounds[1], true); }));
-        toolbar.Children.Add(Button("刷新", () => _ = SyncCurrent(true)));
-        toolbar.Children.Add(Button("重新排列", () => Arrange()));
+        AddTool(_follow);
+        AddTool(_span);
+        AddTool(Button("刷新", () => _ = SyncCurrent(true)));
+        AddTool(_dateToggle);
+        AddTool(_focusToggle);
         var more = new Button { Content = "更多", Padding = new Thickness(12, 7) };
         var menu = CreateMenu();
+        var themeMenu = new MenuItem { Header = "主题" };
+        foreach (string mode in new[] { "跟随系统", "浅色", "深色" })
+        {
+            var item = new MenuItem { Header = mode };
+            item.Click += (_, _) => SetTheme(mode);
+            themeMenu.Items.Add(item);
+        }
+        menu.Items.Add(themeMenu);
+        var arrange = new MenuItem { Header = "重新排列通道" };
+        arrange.Click += (_, _) => Arrange();
+        menu.Items.Add(arrange);
         more.ContextMenu = menu;
         more.Click += (_, _) => menu.Open(more);
-        toolbar.Children.Add(more);
-        var toolArea = new StackPanel { Spacing = 7 };
-        toolArea.Children.Add(toolbar);
-        toolArea.Children.Add(_dateRange);
+        AddTool(more);
+        Put(root, toolbar, 0, 0);
+        var info = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 12 };
+        _sourceInfo.TextTrimming = TextTrimming.CharacterEllipsis;
+        ToolTip.SetTip(_sourceInfo, _viewModel.Source);
+        _viewModel.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(MonitorViewModel.Source))
+                ToolTip.SetTip(_sourceInfo, _viewModel.Source);
+            if (e.PropertyName == nameof(MonitorViewModel.Status))
+                ToolTip.SetTip(_status, _viewModel.Status);
+        };
+        Put(info, _sourceInfo, 0);
+        Put(info, _timeSummary, 1);
+        Put(root, info, 0, 1);
         _dateRange.RangeApplied += (start, end) => Navigate(Clock.Unix(start), Clock.Unix(end), true);
-        Put(root, toolArea, 0, 1);
+        Put(root, _dateRange, 0, 2);
         _channels.Configure(_settings.VisibleChannels, _settings.MultipleAxes);
         _channels.VisibilityChanged += () =>
         {
@@ -184,31 +193,42 @@ public sealed partial class MainWindow : Window
             SyncAxes();
             _plot.Refresh();
         };
-        _band.IsVisible = _settings.EventBandVisible;
-        Put(root, _channels, 0, 2);
-        var chart = new Grid { MinHeight = 245, ClipToBounds = true };
+        Put(root, _channels, 0, 3);
+        _workspace.RowDefinitions = new RowDefinitions("*,6,150");
+        _workspace.RowDefinitions[0].MinHeight = 240;
+        var plotRegion = new Grid { RowDefinitions = new RowDefinitions("*,Auto,Auto"), RowSpacing = 3 };
+        var chart = new Grid { MinHeight = 180, ClipToBounds = true };
         chart.Children.Add(_plot);
         chart.Children.Add(_overlay);
         var border = new Border { Child = chart, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(6), ClipToBounds = true };
         border.Bind(Border.BorderBrushProperty, border.GetResourceObservable("Border"));
-        Put(root, border, 0, 3);
+        Put(plotRegion, border, 0, 0);
+        _band.IsVisible = _settings.EventBandVisible;
         _band.Events = _store.Snapshot.Events;
         _band.Picked += (item, jump) => { SelectEvent(item); if (jump) LastLoad = ShowEvent(item); };
-        Put(root, _band, 0, 4);
+        Put(plotRegion, _band, 0, 1);
         var readout = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+        _cursorLabel.TextTrimming = TextTrimming.CharacterEllipsis;
         Put(readout, _cursorLabel, 0);
-        var marks = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 7 };
+        var marks = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
         marks.Children.Add(Button("标记时间", () => { _marker = _cursorTime; _cursorRendered = double.NaN; UpdateOverlay(); }));
         marks.Children.Add(Button("清除标记", () => { _marker = null; _cursorRendered = double.NaN; UpdateOverlay(); }));
         Put(readout, marks, 1);
-        Put(root, readout, 0, 5);
+        Put(plotRegion, readout, 0, 2);
+        Put(_workspace, plotRegion, 0, 0);
+        Put(_workspace, _splitter, 0, 1);
         _eventList.SelectionRequested += SelectEvent;
         _eventList.ReplayRequested += item => LastLoad = ShowEvent(item);
-        Put(root, _eventList, 0, 6);
-        var footer = new StackPanel { Spacing = 5 };
-        footer.Children.Add(_status);
-        footer.Children.Add(Text("图内拖动 / 滚轮：平移 / 缩放时间  ·  纵轴拖动 / 滚轮：仅调整该通道  ·  右键查看更多操作  ·  日志时间 UTC+08:00", 10, "SecondaryText"));
-        Put(root, footer, 0, 7);
+        Put(_workspace, _eventList, 0, 2);
+        Put(root, _workspace, 0, 4);
+        var footer = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+        _status.TextTrimming = TextTrimming.CharacterEllipsis;
+        Put(footer, _status, 0);
+        var help = Text("操作帮助 · UTC+08:00", 10, "SecondaryText");
+        ToolTip.SetTip(help, "图内拖动 / 滚轮：平移 / 缩放时间\n纵轴拖动 / 滚轮：仅调整该通道\n事件单击高亮、双击回看；右键查看更多操作");
+        Put(footer, help, 1);
+        Put(root, footer, 0, 5);
+        InitializeLayout();
     }
     static double Factor(string key) => key == "CH6" ? 1000 : 1;
     static string Unit(string key) => key == "CH6" ? "mK" : key.StartsWith("CH") ? "K" : "原值";
@@ -274,6 +294,7 @@ public sealed partial class MainWindow : Window
         _right = center + span / 2;
         _plot.Plot.Axes.SetLimitsX(Clock.Plot(_left), Clock.Plot(_right));
         _eventList.SetRange(_left, _right);
+        _timeSummary.Text = $"{Clock.At(_left):MM-dd HH:mm} — {Clock.At(_right):MM-dd HH:mm}";
         _plot.Refresh();
         UpdateOverlay();
     }

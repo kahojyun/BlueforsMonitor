@@ -8,6 +8,7 @@ public sealed class AppSettings
     {
         get; set;
     }
+    public LayoutSettings Layout { get; set; } = new();
     public int Version { get; set; } = 1;
     public string Theme { get; set; } = "跟随系统";
     public bool MultipleAxes { get; set; } = true;
@@ -24,7 +25,10 @@ public sealed class AppSettings
     {
         try
         {
-            return JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(Path.Combine(Root, "settings.json"))) ?? new();
+            var settings = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(Path.Combine(Root, "settings.json"))) ?? new();
+            settings.Layout ??= new();
+            settings.Layout.Normalize();
+            return settings;
         }
         catch { return new(); }
     }

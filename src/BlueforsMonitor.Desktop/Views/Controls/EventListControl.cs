@@ -21,8 +21,16 @@ public sealed class EventListControl : Grid
     }
     readonly TableView _events = new() { Name = "EventRows", CanUserResizeColumns = true };
     readonly TextBlock _eventCount = Text("", 14);
-    readonly TextBlock _rangeLabel = Text("", 11, "SecondaryText");
+    readonly TextBlock _expandIcon = Text("▾", 12, "SecondaryText");
     readonly TextBlock _detail = Text("点击事件查看同期 Still、流量和压力变化。", 11, "SecondaryText");
+    readonly Button _expand = new() { Name = "EventsToggle", Padding = new Thickness(6, 3) };
+    readonly CheckBox _detailsToggle = new() { Name = "DetailsToggle", Content = "详情", MinHeight = 26 };
+    readonly ScrollViewer _detailArea = new() { MaxHeight = 72 };
+    bool _expanded = true, _detailsExpanded = true;
+    public bool Expanded => _expanded;
+    public bool DetailsExpanded => _detailsExpanded;
+    public event Action<bool>? ExpandedChanged;
+    public event Action<bool>? DetailsExpandedChanged;
     bool _updating;
     public EventRecord? SelectedEvent => _events.SelectedItem as EventRecord;
     public event Action<EventRecord>? SelectionRequested;
@@ -30,13 +38,27 @@ public sealed class EventListControl : Grid
 
     public EventListControl()
     {
-        RowDefinitions = new RowDefinitions("Auto,170,Auto");
-        RowSpacing = 9;
+        RowDefinitions = new RowDefinitions("Auto,*,Auto");
+        RowSpacing = 4;
         _eventCount.Bind(TextBlock.TextProperty, this.GetObservable(CountTextProperty));
         var eventHeader = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), ColumnSpacing = 18 };
-        Put(eventHeader, _eventCount, 0);
+        var caption = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        caption.Children.Add(_expandIcon);
+        caption.Children.Add(_eventCount);
+        _expand.Content = caption;
+        _expand.Click += (_, _) => { SetExpanded(!_expanded); ExpandedChanged?.Invoke(_expanded); };
+        ToolTip.SetTip(_expand, "展开 / 收起事件表");
+        Put(eventHeader, _expand, 0);
         Put(eventHeader, Text("单击高亮 · 双击回看前后各 30 分钟", 11, "SecondaryText"), 1);
-        Put(eventHeader, _rangeLabel, 2);
+        _detailsToggle.IsChecked = true;
+        _detailsToggle.IsCheckedChanged += (_, _) =>
+        {
+            if (_updating) return;
+            _detailsExpanded = _detailsToggle.IsChecked == true;
+            UpdatePanels();
+            DetailsExpandedChanged?.Invoke(_detailsExpanded);
+        };
+        Put(eventHeader, _detailsToggle, 2);
         Put(this, eventHeader, 0, 0);
         _events.Bind(TemplatedControl.BackgroundProperty, _events.GetResourceObservable("Plot"));
         _events.BorderThickness = new Thickness(0);
@@ -57,6 +79,7 @@ public sealed class EventListControl : Grid
             if (!_updating && _events.SelectedItem is EventRecord item)
             {
                 _detail.Text = item.Detail;
+                UpdatePanels();
                 SelectionRequested?.Invoke(item);
             }
         };
@@ -69,7 +92,32 @@ public sealed class EventListControl : Grid
         };
         Put(this, _events, 0, 1);
         _detail.TextWrapping = TextWrapping.Wrap;
-        Put(this, _detail, 0, 2);
+        _detailArea.Content = _detail;
+        Put(this, _detailArea, 0, 2);
+        SizeChanged += (_, _) => UpdatePanels();
+        UpdatePanels();
+    }
+    public void SetExpanded(bool value)
+    {
+        _expanded = value;
+        UpdatePanels();
+    }
+    public void SetDetailsExpanded(bool value)
+    {
+        _detailsExpanded = value;
+        _updating = true;
+        try { _detailsToggle.IsChecked = value; }
+        finally { _updating = false; }
+        UpdatePanels();
+    }
+    void UpdatePanels()
+    {
+        _expandIcon.Text = _expanded ? "▾" : "▸";
+        _detailArea.MaxHeight = Math.Clamp(Bounds.Height - _expand.Bounds.Height - 98, 0, 72);
+        _events.IsVisible = _expanded;
+        RowDefinitions[1].Height = _expanded ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+        _detailsToggle.IsVisible = _expanded && SelectedEvent != null;
+        _detailArea.IsVisible = _expanded && _detailsExpanded && SelectedEvent != null;
     }
     void AddColumn(string header, double width, Func<EventRecord, string> text, Func<EventRecord, string>? color = null)
     {
@@ -114,10 +162,11 @@ public sealed class EventListControl : Grid
                 if (item != null)
                     _events.ScrollIntoView(item);
             }
-            _detail.Text = item?.Detail ?? "点击事件查看同期 Still、流量和压力变化。";
+            _detail.Text = item?.Detail ?? "";
+            UpdatePanels();
         }
         finally { _updating = false; }
     }
     public void SetRange(double left, double right) =>
-        _rangeLabel.Text = $"{Clock.At(left):MM-dd HH:mm} — {Clock.At(right):MM-dd HH:mm}";
+        ToolTip.SetTip(_expand, $"展开 / 收起事件表 · {Clock.At(left):MM-dd HH:mm} — {Clock.At(right):MM-dd HH:mm}");
 }

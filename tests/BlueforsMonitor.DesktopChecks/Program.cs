@@ -34,7 +34,7 @@ public sealed class CheckApp : App
             try
             {
                 await Check(window);
-                Console.WriteLine("PASS desktop: TableView columns, resize alignment and header isolation, independent controls, bindings, themes, date validation and layout, logs, calendar, axes, events, follow");
+                Console.WriteLine("PASS desktop: compact/focus layouts, splitter and restart persistence, TableView columns, resize alignment and header isolation, independent controls, bindings, themes, date validation and layout, logs, calendar, axes, events, follow");
             }
             catch (Exception error) { Console.Error.WriteLine(error); result = 1; }
             finally { lifetime.Shutdown(result); }
@@ -52,6 +52,11 @@ public sealed class CheckApp : App
         var dateRange = w.GetVisualDescendants().OfType<DateRangeControl>().Single();
         var eventList = w.GetVisualDescendants().OfType<EventListControl>().Single();
         var channels = w.GetVisualDescendants().OfType<ChannelPanelControl>().Single();
+        var dateToggle = w.GetVisualDescendants().OfType<ToggleButton>().Single(c => c.Name == "DateToggle");
+        var focusToggle = w.GetVisualDescendants().OfType<ToggleButton>().Single(c => c.Name == "FocusToggle");
+        Require(!dateRange.IsVisible && eventList.IsVisible && !AppSettings.Load().Layout.FocusMode, "Default compact layout");
+        dateToggle.IsChecked = true;
+        await Task.Delay(100);
         int rangeRequests = 0;
         dateRange.RangeApplied += (_, _) => rangeRequests++;
         var isolatedChannels = new ChannelPanelControl();
@@ -99,17 +104,17 @@ public sealed class CheckApp : App
         Require(axes["CH6"].IsVisible && axes["CH5"].IsVisible, "Multiple axes restored");
         foreach (var key in channels.VisibleChannels.ToArray())
             checks[key].IsChecked = false;
-        Require(channels.VisibleChannels.Length == 0 && channels.GetVisualDescendants().OfType<Border>().Where(b => b.Child is StackPanel).All(b => !b.IsVisible), "All channels can be hidden");
+        Require(channels.VisibleChannels.Length == 0 && channels.GetVisualDescendants().OfType<TextBlock>().Where(t => t.Name?.StartsWith("Readout") == true).All(t => !t.IsVisible), "All channels can be hidden");
         checks["CH6"].IsChecked = true;
         checks["CH5"].IsChecked = true;
-        var theme = Field<ComboBox>(w, "_theme");
-        theme.SelectedItem = "浅色";
+        void SetTheme(string mode) => Call(w, "SetTheme", mode);
+        SetTheme("浅色");
         await Task.Delay(100);
         Require(!Field<bool>(w, "_dark"), "Light theme");
-        theme.SelectedItem = "深色";
+        SetTheme("深色");
         await Task.Delay(100);
         Require(Field<bool>(w, "_dark"), "Dark theme");
-        theme.SelectedItem = "跟随系统";
+        SetTheme("跟随系统");
         Require(w.RequestedThemeVariant == ThemeVariant.Default, "System theme preference");
         Application.Current!.RequestedThemeVariant = ThemeVariant.Light;
         await Task.Delay(100);
@@ -171,7 +176,7 @@ public sealed class CheckApp : App
         w.Width = 1280;
         foreach (string mode in new[] { "浅色", "深色" })
         {
-            theme.SelectedItem = mode;
+            SetTheme(mode);
             await Task.Delay(150);
             bool dark = mode == "深色";
             var eventLabels = w.GetVisualDescendants().OfType<TextBlock>().Where(t => t.Text == store.Snapshot.Events[0].Kind).ToArray();
@@ -195,7 +200,7 @@ public sealed class CheckApp : App
                 bitmap.Save(Path.Combine(directory, dark ? "dark.png" : "light.png"), PngBitmapEncoderOptions.Default);
             }
         }
-        theme.SelectedItem = "跟随系统";
+        SetTheme("跟随系统");
 
         Require(Field<double>(w, "_left") == start, "Date apply");
         int selectionRequests = 0, replayRequests = 0;
@@ -245,5 +250,93 @@ public sealed class CheckApp : App
         File.AppendAllText(file, "05-11-26,11:01:00,0.013\n");
         await (Task)Call(w, "SyncCurrent", true)!;
         Require(Field<double>(w, "_right") == start + 3660, "Follow did not advance");
+        await CheckLayout(w, plot, dateRange, eventList, dateToggle, focusToggle);
+
     }
+    static async Task CheckLayout(MainWindow w, AvaPlot plot, DateRangeControl dates, EventListControl events, ToggleButton dateToggle, ToggleButton focusToggle)
+    {
+        var eventToggle = events.GetVisualDescendants().OfType<Button>().Single(b => b.Name == "EventsToggle");
+        var details = events.GetVisualDescendants().OfType<CheckBox>().Single(c => c.Name == "DetailsToggle");
+        var splitter = w.GetVisualDescendants().OfType<GridSplitter>().Single();
+        dateToggle.IsChecked = false;
+        await Task.Delay(150);
+        double normalHeight = plot.Bounds.Height;
+        Console.WriteLine($"Layout normal: plot {normalHeight:F0} / window {w.Bounds.Height:F0}");
+        double beforePanel = events.Bounds.Height;
+        splitter.RaiseEvent(new VectorEventArgs { RoutedEvent = Thumb.DragStartedEvent, Vector = default });
+        splitter.RaiseEvent(new VectorEventArgs { RoutedEvent = Thumb.DragDeltaEvent, Vector = new Vector(0, -40) });
+        await Task.Delay(100);
+        splitter.RaiseEvent(new VectorEventArgs { RoutedEvent = Thumb.DragCompletedEvent, Vector = default });
+        await Task.Delay(100);
+        Require(events.Bounds.Height > beforePanel + 20 && Math.Abs(AppSettings.Load().Layout.EventPanelHeight - events.Bounds.Height) < 2, "Splitter drag height must persist");
+        double savedHeight = AppSettings.Load().Layout.EventPanelHeight;
+        details.IsChecked = false;
+        Require(!AppSettings.Load().Layout.DetailsExpanded, "Details collapse must persist");
+        eventToggle.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await Task.Delay(100);
+        Require(!events.Expanded && !splitter.IsVisible && plot.Bounds.Height > normalHeight + 60, "Collapsing events frees chart height");
+        dateToggle.IsChecked = true;
+        double left = Field<double>(w, "_left"), right = Field<double>(w, "_right");
+        bool? follow = Field<CheckBox>(w, "_follow").IsChecked;
+        Call(w, "ZoomChannel", "CH6", 0.8, 20d);
+        var axis = Field<Dictionary<string, ScottPlot.AxisPanels.RightAxis>>(w, "_axes")["CH6"];
+        double axisMin = axis.Min, axisMax = axis.Max;
+        focusToggle.IsChecked = true;
+        await Task.Delay(150);
+        Require(axis.Min == axisMin && axis.Max == axisMax, "Focus must preserve manual axis limits");
+        Require(!dates.IsVisible && !events.IsVisible && plot.Bounds.Height > normalHeight + 100, "Focus hides auxiliary areas and expands plot");
+        Require(left == Field<double>(w, "_left") && right == Field<double>(w, "_right") && follow == Field<CheckBox>(w, "_follow").IsChecked, "Layout must preserve range and follow");
+        Require(AppSettings.Load().Layout.FocusMode && AppSettings.Load().Layout.DatesExpanded && !AppSettings.Load().Layout.EventsExpanded, "Focus must preserve underlying layout preferences");
+        Console.WriteLine($"Layout focus: plot {plot.Bounds.Height:F0} / window {w.Bounds.Height:F0}");
+        Capture(w, "focus");
+        var reopened = new MainWindow(new DataStore(Path.Combine(AppSettings.Root, "empty-layout-check")));
+        reopened.Show();
+        await Task.Delay(200);
+        var reopenedDates = reopened.GetVisualDescendants().OfType<DateRangeControl>().Single();
+        var reopenedEvents = reopened.GetVisualDescendants().OfType<EventListControl>().Single();
+        var reopenedFocus = reopened.GetVisualDescendants().OfType<ToggleButton>().Single(t => t.Name == "FocusToggle");
+        Require(reopenedFocus.IsChecked == true && !reopenedDates.IsVisible && !reopenedEvents.IsVisible, "New window must restore saved focus mode");
+        reopenedFocus.IsChecked = false;
+        await Task.Delay(100);
+        Require(reopenedDates.IsVisible && reopenedEvents.IsVisible && !reopenedEvents.Expanded && !reopenedEvents.DetailsExpanded, "Exiting focus must restore saved panel preferences");
+        reopenedEvents.GetVisualDescendants().OfType<Button>().Single(b => b.Name == "EventsToggle").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await Task.Delay(100);
+        Require(Math.Abs(reopenedEvents.Bounds.Height - savedHeight) < 2, "New window must restore saved panel height");
+        reopened.Close();
+        focusToggle.IsChecked = false;
+        eventToggle.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        dateToggle.IsChecked = false;
+        await Task.Delay(100);
+        Require(Math.Abs(events.Bounds.Height - savedHeight) < 2, "Expanded panel must recover saved height");
+        foreach (var mode in new[] { "浅色", "深色" })
+        {
+            Call(w, "SetTheme", mode);
+            await Task.Delay(100);
+            Capture(w, "compact-" + (mode == "浅色" ? "light" : "dark"));
+        }
+        w.Width = 1000; w.Height = 640;
+        dateToggle.IsChecked = true;
+        await Task.Delay(200);
+        Require(plot.Bounds.Height >= 179 && events.Bounds.Height >= 120, "Small window keeps chart and events usable");
+        foreach (var panel in new Control[] { dates, events, plot })
+        {
+            var origin = panel.TranslatePoint(default, w)!.Value;
+            Require(origin.X >= 0 && origin.Y >= 0 && origin.X + panel.Bounds.Width <= w.Bounds.Width + 1 && origin.Y + panel.Bounds.Height <= w.Bounds.Height + 1, "Panels must stay inside small window");
+        }
+        details.IsChecked = true;
+        await Task.Delay(100);
+        var table = events.GetVisualDescendants().OfType<TableView>().Single();
+        Require(table.Bounds.Height >= 80, "Expanded details must leave usable table rows in small window");
+        Require(AppSettings.Load().Layout.EventPanelHeight == savedHeight, "Temporary height clamp must not overwrite saved panel height");
+        Capture(w, "small");
+    }
+    static void Capture(MainWindow window, string name)
+    {
+        if (Environment.GetEnvironmentVariable("BLUEFORS_CHECK_SCREENSHOTS") is not string directory) return;
+        Directory.CreateDirectory(directory);
+        using var bitmap = new RenderTargetBitmap(new PixelSize((int)window.Bounds.Width * 2, (int)window.Bounds.Height * 2), new Vector(192, 192));
+        bitmap.Render(window);
+        bitmap.Save(Path.Combine(directory, name + ".png"), PngBitmapEncoderOptions.Default);
+    }
+
 }

@@ -8,14 +8,12 @@ using static BlueforsAvalonia.ViewElements;
 
 namespace BlueforsAvalonia;
 
-/// <summary>Owns channel visibility, readout cards and axis-selection UI; never reads or saves settings.</summary>
+/// <summary>Owns channel visibility, compact readouts and axis-selection UI; never reads or saves settings.</summary>
 public sealed class ChannelPanelControl : StackPanel
 {
     readonly Dictionary<string, CheckBox> _checks = new();
     readonly Dictionary<string, TextBlock> _values = new();
     readonly Dictionary<string, TextBlock> _modes = new();
-    readonly Dictionary<string, Border> _cardByKey = new();
-    readonly UniformGrid _cards = new() { Rows = 1 };
     readonly ComboBox _axisSelector = new() { Name = "AxisSelector", Width = 90, ItemsSource = DataStore.Keys, SelectedIndex = 0 };
     readonly CheckBox _multiple = new() { Name = "MultipleAxes", Content = "多纵轴" };
     bool _updating;
@@ -27,8 +25,8 @@ public sealed class ChannelPanelControl : StackPanel
 
     public ChannelPanelControl()
     {
-        Spacing = 9;
-        var toggles = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 13 };
+        Spacing = 3;
+        var toggles = new WrapPanel { Orientation = Orientation.Horizontal };
         foreach (string key in DataStore.Keys)
         {
             var check = new CheckBox { Name = "Channel" + key, Content = key, FontSize = 11, MinHeight = 26 };
@@ -40,28 +38,31 @@ public sealed class ChannelPanelControl : StackPanel
                 SyncCards();
                 VisibilityChanged?.Invoke();
             };
-            toggles.Children.Add(check);
-            var content = new StackPanel { Spacing = 4 };
-            var line = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
-            Put(line, Text(ChannelName(key), 11, UiTheme.ChannelResource(key)), 0);
-            _modes[key] = Text("自动", 10, "SecondaryText");
-            Put(line, _modes[key], 1);
-            content.Children.Add(line);
-            var value = Text("—", 18, UiTheme.ChannelResource(key));
+            var content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+            ToolTip.SetTip(check, ChannelName(key));
+            content.Children.Add(check);
+            var value = Text("—", 12, UiTheme.ChannelResource(key));
+            value.Name = "Readout" + key;
             value.FontWeight = FontWeight.Medium;
+            value.MaxWidth = 150;
+            value.TextTrimming = TextTrimming.CharacterEllipsis;
             _values[key] = value;
             content.Children.Add(value);
-            var card = new Border { CornerRadius = new CornerRadius(6), Padding = new Thickness(10, 7), Margin = new Thickness(0, 0, 8, 0), Child = content };
-            card.Bind(Border.BackgroundProperty, card.GetResourceObservable("Surface"));
-            _cardByKey[key] = card;
-            _cards.Children.Add(card);
+            var mode = Text("手动", 10, "SecondaryText");
+            mode.IsVisible = false;
+            _modes[key] = mode;
+            content.Children.Add(mode);
+            var chip = new Border { CornerRadius = new CornerRadius(4), Padding = new Thickness(6, 0), Margin = new Thickness(0, 0, 6, 3), Child = content };
+            chip.Bind(Border.BackgroundProperty, chip.GetResourceObservable("Surface"));
+            toggles.Children.Add(chip);
         }
+        _axisSelector.Margin = new Thickness(0, 0, 8, 3);
+        _multiple.Margin = new Thickness(0, 0, 0, 3);
         toggles.Children.Add(_axisSelector);
         toggles.Children.Add(_multiple);
         _axisSelector.SelectionChanged += (_, _) => { if (!_updating) AxisOptionsChanged?.Invoke(); };
         _multiple.IsCheckedChanged += (_, _) => { if (!_updating) AxisOptionsChanged?.Invoke(); };
         Children.Add(toggles);
-        Children.Add(_cards);
         SyncCards();
     }
     public void Configure(IEnumerable<string> visible, bool multipleAxes)
@@ -87,13 +88,15 @@ public sealed class ChannelPanelControl : StackPanel
     public void SetManualChannels(IReadOnlySet<string> manual)
     {
         foreach (var key in DataStore.Keys)
-            _modes[key].Text = manual.Contains(key) ? "手动" : "自动";
+            _modes[key].IsVisible = manual.Contains(key) && IsChannelVisible(key);
     }
     void SyncCards()
     {
-        _cards.Columns = Math.Max(1, VisibleChannels.Length);
-        foreach (var pair in _cardByKey)
+        foreach (var pair in _values)
+        {
             pair.Value.IsVisible = IsChannelVisible(pair.Key);
+            if (!IsChannelVisible(pair.Key)) _modes[pair.Key].IsVisible = false;
+        }
     }
     static string ChannelName(string key) => key == "CH6" ? "CH6 · 混合室" : key == "CH5" ? "CH5 · Still" : key;
 }
