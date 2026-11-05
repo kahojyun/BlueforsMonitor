@@ -2,6 +2,8 @@ using System.Reflection;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Interactivity;
+using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Styling;
@@ -31,7 +33,7 @@ public sealed class CheckApp : App
             try
             {
                 await Check(window);
-                Console.WriteLine("PASS desktop: compiled bindings, themes, date validation and layout, logs, calendar, axes, events, follow");
+                Console.WriteLine("PASS desktop: independent controls, bindings, themes, date validation and layout, logs, calendar, axes, events, follow");
             }
             catch (Exception error) { Console.Error.WriteLine(error); result = 1; }
             finally { lifetime.Shutdown(result); }
@@ -46,13 +48,28 @@ public sealed class CheckApp : App
     }
     static async Task Check(MainWindow w)
     {
+        var dateRange = w.GetVisualDescendants().OfType<DateRangeControl>().Single();
+        var eventList = w.GetVisualDescendants().OfType<EventListControl>().Single();
+        var channels = w.GetVisualDescendants().OfType<ChannelPanelControl>().Single();
+        int rangeRequests = 0;
+        dateRange.RangeApplied += (_, _) => rangeRequests++;
+        var isolatedChannels = new ChannelPanelControl();
+        int visibilityRequests = 0, axisRequests = 0;
+        isolatedChannels.VisibilityChanged += () => visibilityRequests++;
+        isolatedChannels.AxisOptionsChanged += () => axisRequests++;
+        isolatedChannels.Configure(new[] { "CH6", "P2" }, true);
+        Require(visibilityRequests == 0 && axisRequests == 0 && isolatedChannels.VisibleChannels.SequenceEqual(new[] { "CH6", "P2" }), "Initial configuration must be silent and independent of MainWindow");
+        isolatedChannels.SetChannelVisible("P2", false);
+        Require(visibilityRequests == 1, "One visibility action must emit one notification");
+        var apply = dateRange.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, "应用时间"));
+        void ApplyDates() => apply.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         var model = Field<MonitorViewModel>(w, "_viewModel");
         model.Status = "binding status";
         model.Source = "binding source";
         model.EventCount = "binding events";
         Require(Field<TextBlock>(w, "_status").Text == model.Status &&
             Field<TextBlock>(w, "_sourceInfo").Text == model.Source &&
-            Field<TextBlock>(w, "_eventCount").Text == model.EventCount, "Compiled bindings must propagate property changes");
+            eventList.CountText == model.EventCount && eventList.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == model.EventCount), "Compiled bindings must propagate property changes");
         Require(!Field<DataStore>(w, "_store").HasData, "First launch must be empty");
         string logs = Path.Combine(AppSettings.Root, "logs");
         Directory.CreateDirectory(logs);
@@ -64,11 +81,26 @@ public sealed class CheckApp : App
         var plot = Field<AvaPlot>(w, "_plot");
         await Task.Delay(250);
         float width = plot.Plot.LastRender.DataRect.Width;
-        var checks = Field<Dictionary<string, CheckBox>>(w, "_checks");
+        var checks = channels.GetVisualDescendants().OfType<CheckBox>().Where(c => DataStore.Keys.Contains(c.Content as string)).ToDictionary(c => (string)c.Content!);
         foreach (string key in new[] { "Flow", "P2", "P3", "P4" })
             checks[key].IsChecked = false;
         await Task.Delay(250);
         Require(plot.Plot.LastRender.DataRect.Width > width + 150, "Hidden axes must release space");
+        Require(AppSettings.Load().VisibleChannels.SequenceEqual(channels.VisibleChannels), "Visibility preferences must persist");
+        var axisSelector = channels.GetVisualDescendants().OfType<ComboBox>().Single();
+        var multiple = channels.GetVisualDescendants().OfType<CheckBox>().Single(c => Equals(c.Content, "多纵轴"));
+        multiple.IsChecked = false;
+        axisSelector.SelectedItem = "CH5";
+        var axes = Field<Dictionary<string, ScottPlot.AxisPanels.RightAxis>>(w, "_axes");
+        Require(!axes["CH6"].IsVisible && axes["CH5"].IsVisible && !AppSettings.Load().MultipleAxes, "Single-axis selection and persistence");
+        multiple.IsChecked = true;
+        axisSelector.SelectedItem = "CH6";
+        Require(axes["CH6"].IsVisible && axes["CH5"].IsVisible, "Multiple axes restored");
+        foreach (var key in channels.VisibleChannels.ToArray())
+            checks[key].IsChecked = false;
+        Require(channels.VisibleChannels.Length == 0 && channels.GetVisualDescendants().OfType<Border>().Where(b => b.Child is StackPanel).All(b => !b.IsVisible), "All channels can be hidden");
+        checks["CH6"].IsChecked = true;
+        checks["CH5"].IsChecked = true;
         var theme = Field<ComboBox>(w, "_theme");
         theme.SelectedItem = "浅色";
         await Task.Delay(100);
@@ -85,8 +117,8 @@ public sealed class CheckApp : App
         await Task.Delay(100);
         Require(Field<bool>(w, "_dark"), "Inherited dark theme");
         Application.Current.RequestedThemeVariant = ThemeVariant.Default;
-        var from = Field<DateTimeField>(w, "_from");
-        var to = Field<DateTimeField>(w, "_to");
+        var from = dateRange.Start;
+        var to = dateRange.End;
         double start = Clock.Unix(new DateTime(2026, 11, 5, 10, 0, 0));
         from.Set(start);
         to.Set(start + 3600);
@@ -94,16 +126,16 @@ public sealed class CheckApp : App
         await Task.Delay(100);
         Require(from.Date.IsDropDownOpen, "Calendar popup");
         from.Date.IsDropDownOpen = false;
-        var errorLabel = Field<TextBlock>(w, "_dateError");
         var follow = Field<CheckBox>(w, "_follow");
         bool? originalFollow = follow.IsChecked;
         double originalLeft = Field<double>(w, "_left"), originalRight = Field<double>(w, "_right");
         void Reject(string expected)
         {
-            Call(w, "ApplyDates");
-            Require(errorLabel.IsVisible && errorLabel.Text!.Contains(expected), "Specific inline date error: " + expected + " / " + errorLabel.Text);
+            ApplyDates();
+            Require(dateRange.ValidationMessage?.Contains(expected) == true, "Specific inline date error: " + expected + " / " + dateRange.ValidationMessage);
             Require(Field<double>(w, "_left") == originalLeft && Field<double>(w, "_right") == originalRight &&
                 follow.IsChecked == originalFollow, "Invalid dates must preserve view and follow mode");
+            Require(rangeRequests == 0, "Invalid input must not emit navigation requests");
         }
         from.Date.Text = "";
         Reject("开始时间");
@@ -130,10 +162,11 @@ public sealed class CheckApp : App
         Reject("开始时间");
         from.Set(start);
         await Task.Delay(50);
-        Call(w, "ApplyDates");
+        ApplyDates();
         if (w.LastLoad != null)
             await w.LastLoad;
-        Require(!errorLabel.IsVisible && follow.IsChecked == false, "Valid date range clears error and pauses follow");
+        Require(rangeRequests == 1, "Applying dates must request navigation only once");
+        Require(dateRange.ValidationMessage == null && follow.IsChecked == false, "Valid date range clears error and pauses follow");
         w.Width = 1280;
         foreach (string mode in new[] { "浅色", "深色" })
         {
@@ -146,7 +179,7 @@ public sealed class CheckApp : App
                 Require((label.Foreground as ISolidColorBrush)?.Color == Color.Parse(UiTheme.Hex("EventFast", dark)), "Existing event rows must recolor");
             Require(from.Time.Bounds.Width >= from.Time.DesiredSize.Width - 1 &&
                 to.Time.Bounds.Width >= to.Time.DesiredSize.Width - 1, "Native time picker must not be clipped");
-            foreach (var control in new Control[] { from, to, errorLabel })
+            foreach (var control in new Control[] { from, to, dateRange })
             {
                 if (!control.IsVisible)
                     continue;
@@ -164,11 +197,24 @@ public sealed class CheckApp : App
         theme.SelectedItem = "跟随系统";
 
         Require(Field<double>(w, "_left") == start, "Date apply");
-        Call(w, "SelectEvent", store.Snapshot.Events[0]);
+        int selectionRequests = 0, replayRequests = 0;
+        eventList.SelectionRequested += _ => selectionRequests++;
+        eventList.ReplayRequested += _ => replayRequests++;
+        var rows = eventList.GetVisualDescendants().OfType<ListBox>().Single();
+        rows.SelectedItem = store.Snapshot.Events[0];
+        Require(selectionRequests == 1 && replayRequests == 0 && ReferenceEquals(Field<EventRecord>(w, "_selected"), rows.SelectedItem), "Selection must reach window exactly once");
         Require(Field<double>(w, "_left") == start, "Selection must not jump");
-        await (Task)Call(w, "ShowEvent", store.Snapshot.Events[0])!;
+        var pointer = new Avalonia.Input.Pointer(1, PointerType.Mouse, true);
+        var pointerArgs = new PointerEventArgs(InputElement.PointerReleasedEvent, rows, pointer, w, default, 0, new PointerPointProperties(), KeyModifiers.None);
+        rows.RaiseEvent(new TappedEventArgs(InputElement.DoubleTappedEvent, pointerArgs));
+        if (w.LastLoad != null)
+            await w.LastLoad;
+        Require(selectionRequests == 1 && replayRequests == 1, "Replay must not recursively select");
         Require(from.Value == Clock.At(start), "Replay must preserve entered dates");
         double before = Field<double>(w, "_right");
+        int requestsBeforeRefresh = selectionRequests;
+        Call(w, "UpdateMetadata");
+        Require(eventList.SelectedEvent?.Start == store.Snapshot.Events[0].Start && selectionRequests == requestsBeforeRefresh, "Refresh must retain selection without user events");
         File.AppendAllText(file, "05-11-26,11:00:00,0.013\n");
         await (Task)Call(w, "SyncCurrent", true)!;
         Require(Field<double>(w, "_right") == before, "Paused view moved");

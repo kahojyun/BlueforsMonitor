@@ -35,21 +35,14 @@ public sealed partial class MainWindow
         else
             _plot.Refresh();
     }
-    void SyncCards()
-    {
-        var visible = DataStore.Keys.Where(k => _checks.TryGetValue(k, out var c) && c.IsChecked == true).ToArray();
-        _cards.Columns = Math.Max(1, visible.Length);
-        foreach (var pair in _cardByKey)
-            pair.Value.IsVisible = visible.Contains(pair.Key);
-    }
     void SyncAxes()
     {
         // Hidden axes must leave the layout, not just stop painting their ticks.
         foreach (var axis in _axes.Values)
             _plot.Plot.Axes.Remove(axis);
-        foreach (var key in DataStore.Keys.Where(k => _checks[k].IsChecked == true))
+        foreach (var key in _channels.VisibleChannels)
         {
-            _axes[key].IsVisible = _settings.MultipleAxes || key == (_axisSelector.SelectedItem as string);
+            _axes[key].IsVisible = _settings.MultipleAxes || key == _channels.SelectedAxis;
             _axes[key].MinimumSize = _axes[key].IsVisible ? (key == "P2" ? 80 : 65) : 0;
             _plot.Plot.Axes.AddRightAxis(_axes[key]);
         }
@@ -77,7 +70,7 @@ public sealed partial class MainWindow
     {
         if (_data == null)
             return;
-        var keys = DataStore.Keys.Where(k => _checks[k].IsChecked == true).ToArray();
+        var keys = _channels.VisibleChannels;
         for (int i = 0; i < keys.Length; i++)
         {
             string key = keys[i];
@@ -105,7 +98,7 @@ public sealed partial class MainWindow
             ? $"{(_store.IsLive ? _store.LogRoot : "历史缓存")}   ·   {Clock.At(data.Bounds[0]):yyyy.MM.dd} — {Clock.At(data.Bounds[1]):yyyy.MM.dd HH:mm}   ·   {data.Counts.Values.Sum():N0} 条" + (_store.IsLive ? $"   ·   最新记录距今 {Math.Max(0, (DateTimeOffset.UtcNow.ToUnixTimeSeconds() - data.Bounds[1]) / 60):F0} 分钟" : "")
             : (_store.LogRoot ?? "选择 Logfiles 日志目录开始使用。");
         double? selected = _selected?.Start;
-        _events.ItemsSource = data.Events;
+        _eventList.SetEvents(data.Events);
         _band.Events = data.Events;
         _viewModel.EventCount = $"升温事件  {data.Events.Length}";
         _selected = selected.HasValue ? data.Events.FirstOrDefault(e => e.Start == selected.Value) : null;
@@ -113,7 +106,7 @@ public sealed partial class MainWindow
             SelectEvent(_selected);
         else
         {
-            _eventDetail.Text = "点击事件查看同期 Still、流量和压力变化。";
+            _eventList.Select(null);
             UpdateSelection();
         }
     }
@@ -263,7 +256,7 @@ public sealed partial class MainWindow
     }
     void FitSelectedAxis()
     {
-        if (_data == null || _axisSelector.SelectedItem is not string key)
+        if (_data == null || _channels.SelectedAxis is not string key)
             return;
         var points = _data.Series[key].Points.Where(p => p.T >= _left && p.T <= _right).Select(p => p.V * Factor(key)).ToArray();
         if (points.Length == 0)
