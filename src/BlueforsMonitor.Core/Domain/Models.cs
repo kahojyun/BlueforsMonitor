@@ -25,4 +25,3 @@ public static class Clock
     public static double Plot(double unix) => At(unix).ToOADate();
     public static double FromPlot(double value) => Unix(DateTime.FromOADate(value));
 }
-
