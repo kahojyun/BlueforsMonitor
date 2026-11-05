@@ -8,3 +8,9 @@
 - GitHub CI 在推送和拉取请求时运行；最新结果见仓库 Actions 页面。
 
 可选本地历史对照：`dotnet run --project tests/BlueforsMonitor.Tests -c Release -- --reference <包含 history.sqlite 与 events.json 的目录>`。此入口仅属于测试程序。
+
+## 依赖升级回归
+
+Avalonia 12.1.5 / ScottPlot 5.1.59 / Microsoft.Data.Sqlite 10.0.14：本机 Release 构建零警告、零错误，核心回归和 81 个历史事件对照通过。Mac 桌面检查通过浅色/深色切换、跟随系统选项、日期日历弹出、隐藏曲线释放纵轴宽度、事件选择/定位，以及合成日志追加时的暂停/跟随行为。
+
+之前的 Windows 用户验证对应升级前版本；升级后的 Windows 桌面交互、真实实时日志环境仍待实机验证。三平台 CI 的构建与核心回归不等同于完整 GUI 验收。

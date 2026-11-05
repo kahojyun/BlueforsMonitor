@@ -7,9 +7,9 @@
     <AssemblyName>BlueforsAvalonia</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Avalonia.Desktop" Version="11.3.9" />
-    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.9" />
-    <PackageReference Include="ScottPlot.Avalonia" Version="5.1.57" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.5" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.5" />
+    <PackageReference Include="ScottPlot.Avalonia" Version="5.1.59" />
     <ProjectReference Include="../BlueforsMonitor.Core/BlueforsMonitor.Core.csproj" />
   </ItemGroup>
 </Project>

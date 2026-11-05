@@ -14,6 +14,10 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
-      - run: dotnet restore
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - run: dotnet restore --locked-mode
+      - run: python scripts/check_dependencies.py
       - run: dotnet build -c Release --no-restore -p:UseSharedCompilation=false
       - run: dotnet run --project tests/BlueforsMonitor.Tests -c Release --no-build

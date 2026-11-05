@@ -67,3 +67,19 @@ cd BlueforsMonitor
 构建和测试状态见 [GitHub Actions](https://github.com/kahojyun/BlueforsMonitor/actions)。
 
 本项目使用 [MIT License](LICENSE)，版权署名为 Bluefors Monitor contributors。第三方依赖及本机组件的许可见 [第三方声明](THIRD_PARTY_NOTICES.md)。
+
+## 依赖更新
+
+当前直接依赖：Avalonia 12.1.5、ScottPlot.Avalonia 5.1.59、Microsoft.Data.Sqlite 10.0.14。ScottPlot.Avalonia 5.1.59 要求 Avalonia 12。
+
+提交的 `packages.lock.json` 固定各平台依赖图。CI 使用 `dotnet restore --locked-mode`，随后运行 `python scripts/check_dependencies.py` 比较锁文件与人工审核的 `licenses/inventory.json`，并校验许可证文件 SHA-256。声明仍需人工审核；检查程序负责发现依赖版本或许可原文漂移，不自动判断许可合规。
+
+升级时先修改 PackageReference，执行 `dotnet restore --force-evaluate`，核对包许可证并同步第三方声明、原文与 inventory，再运行回归及发布检查。不要仅重算哈希来绕过审核。
+
+桌面兼容性检查（需要图形桌面，会短暂打开窗口）：
+
+```sh
+dotnet run --project tests/BlueforsMonitor.DesktopChecks -c Release
+```
+
+该程序使用独立临时设置和合成日志，覆盖主题、日历、纵轴空间、事件定位及追加日志后的跟随行为；CI 仅编译此程序，核心回归在三个平台执行。
