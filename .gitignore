@@ -13,3 +13,6 @@ events.json
 
 # License names may contain .Sqlite or .DBus.
 !licenses/**
+
+__pycache__/
+*.pyc

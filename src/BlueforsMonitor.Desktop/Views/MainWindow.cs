@@ -56,7 +56,7 @@ public sealed partial class MainWindow : Window
     {
         _session = new MonitoringSession(store, AppSettings.Root);
         _axisController = new AxisController(_plot.Plot, _dark);
-        Title = "Bluefors Monitor · Avalonia 0.5";
+        Title = $"Bluefors Monitor · Avalonia {AppVersion.Current}";
         Width = 1460;
         Height = 980;
         MinWidth = 1000;

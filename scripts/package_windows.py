@@ -16,6 +16,7 @@ root = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
 parser.add_argument("publish", type=Path)
 parser.add_argument("output", type=Path)
+parser.add_argument("--build-info", required=True, type=Path)
 args = parser.parse_args()
 publish, output = args.publish.resolve(), args.output.resolve()
 if not (publish / "BlueforsAvalonia.exe").is_file():
@@ -28,6 +29,8 @@ with tempfile.TemporaryDirectory(prefix="bluefors-package-") as scratch:
     for name in ("LICENSE", "THIRD_PARTY_NOTICES.md"):
         shutil.copy2(root / name, stage / name)
     shutil.copytree(root / "licenses", stage / "licenses")
+    shutil.copy2(args.build_info, stage / "BUILD-INFO.json")
+    version = json.loads(args.build_info.read_text(encoding="utf-8"))["version"]
     exe = stage / "BlueforsMonitor.exe"
     source = root / "packaging/windows-launcher.c"
     if shutil.which("zig"):
@@ -42,7 +45,7 @@ with tempfile.TemporaryDirectory(prefix="bluefors-package-") as scratch:
         subprocess.run(["cl", "/nologo", "/utf-8", "/Os", "/GS-", str(source), "/Fe:" + str(exe), "/link", "/NODEFAULTLIB", "/ENTRY:Start", "/SUBSYSTEM:WINDOWS", "kernel32.lib", "user32.lib"], check=True, cwd=scratch)
     else:
         raise SystemExit("Install Zig, or run in a VS x64 developer shell with cl.exe available")
-    (stage / "使用说明.txt").write_text("""Bluefors Monitor · Windows x64
+    (stage / "使用说明.txt").write_text(f"""Bluefors Monitor {version} · Windows x64
 完整解压 ZIP 后，双击本目录唯一的 BlueforsMonitor.exe。
 app 文件夹包含程序和 .NET 运行时，请完整保留，无需另外安装 .NET。
 默认主题跟随系统，日志时间 UTC+08:00。

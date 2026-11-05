@@ -10,14 +10,15 @@ jobs:
       DOTNET_CLI_TELEMETRY_OPTOUT: '1'
       AVALONIA_TELEMETRY_OPTOUT: '1'
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
-          dotnet-version: '10.0.x'
-      - uses: actions/setup-python@v5
+          global-json-file: global.json
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.x'
       - run: dotnet restore --locked-mode
       - run: python scripts/check_dependencies.py
+      - run: python -m unittest discover -s tests/release -v
       - run: dotnet build -c Release --no-restore -p:UseSharedCompilation=false
       - run: dotnet run --project tests/BlueforsMonitor.Tests -c Release --no-build

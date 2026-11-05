@@ -17,7 +17,7 @@
 
 ## 开发
 
-需要 .NET 10 SDK。支持目标为 Windows x64、macOS Apple Silicon；用户已在一台 Windows 电脑上成功启动并打开 Logfiles 目录；实时日志持续追加环境尚未实测。
+需要 `global.json` 指定的 .NET SDK。支持目标为 Windows x64、macOS Apple Silicon；用户已在一台 Windows 电脑上成功启动并打开 Logfiles 目录；实时日志持续追加环境尚未实测。
 
 ```sh
 dotnet restore
@@ -43,13 +43,15 @@ dotnet run --project tests/BlueforsMonitor.Tests -c Release
 bash scripts/publish.sh osx-arm64
 ```
 
-macOS 输出 `artifacts/Bluefors Monitor.app`。Windows PowerShell 执行：
+macOS 输出 `artifacts/release/BlueforsMonitor-<版本>-osx-arm64.zip`。Windows PowerShell 执行：
 
 ```powershell
 ./scripts/publish.ps1
 ```
 
-Windows 打包还需要 Python 3，以及 Zig 或 VS x64 开发者命令行中的 cl.exe，用于编译无控制台的原生启动器。Windows 输出 `artifacts/BlueforsMonitor-win-x64.zip`；完整解压后双击根目录唯一的 `BlueforsMonitor.exe`，依赖位于 `app` 子目录。发布包包含 .NET 运行时。运行时补丁由安装的 SDK 选择；跨机器发布时记录 SDK 版本。脚本不执行签名、公证或自动上传。
+Windows 打包还需要 Python 3，以及 Zig 或 VS x64 开发者命令行中的 cl.exe，用于编译无控制台的原生启动器。输出 `artifacts/release/BlueforsMonitor-<版本>-win-x64.zip`；完整解压后双击根目录唯一的 `BlueforsMonitor.exe`，依赖位于 `app` 子目录。包包含 .NET 运行时。
+
+产品版本统一来自 `VERSION`。独立的 **Draft release** 工作流生成两平台包、构建信息和 SHA-256 校验清单，仅创建 Release 草稿，实机验收后由维护者正式发布。详见 [发布流程](docs/releasing.md)。
 
 ## 结构与约定
 

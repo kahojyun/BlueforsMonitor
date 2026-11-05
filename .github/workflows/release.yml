@@ -1,0 +1,129 @@
+name: Draft release
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+# Packaging jobs only read source. Only the final job may create a draft.
+permissions:
+  contents: read
+concurrency:
+  group: bluefors-draft-release
+  cancel-in-progress: false
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  AVALONIA_TELEMETRY_OPTOUT: '1'
+  PYTHONDONTWRITEBYTECODE: '1'
+
+jobs:
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          global-json-file: global.json
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.13'
+      - name: Check version and tag
+        shell: bash
+        run: |
+          version=$(python scripts/release.py version)
+          if [[ "$GITHUB_REF_TYPE" == tag && "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "Tag must match VERSION" >&2
+            exit 1
+          fi
+      - run: dotnet restore --locked-mode
+      - run: python scripts/check_dependencies.py
+      - run: python -m unittest discover -s tests/release -v
+      - run: dotnet build -c Release --no-restore -p:UseSharedCompilation=false
+      - run: dotnet run --project tests/BlueforsMonitor.Tests -c Release --no-build
+
+  package:
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            runtime: win-x64
+          - os: macos-15
+            runtime: osx-arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          global-json-file: global.json
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.13'
+      - name: Prepare native Windows compiler
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $installation = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $installation) { throw 'MSVC x64 compiler is required' }
+          $vcvars = Join-Path $installation 'VC\Auxiliary\Build\vcvars64.bat'
+          $lines = & cmd.exe /d /c "`"$vcvars`" >nul && set"
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot initialize MSVC' }
+          foreach ($line in $lines) {
+            if ($line -match '^(PATH|INCLUDE|LIB|LIBPATH|VCToolsInstallDir|VCINSTALLDIR|WindowsSdkDir|WindowsSDKVersion)=(.*)$') {
+              "$($matches[1])=$($matches[2])" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            }
+          }
+      - name: Build and validate package
+        run: python scripts/release.py build --runtime ${{ matrix.runtime }}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-${{ matrix.runtime }}
+          path: artifacts/release/*.zip
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+  draft:
+    needs: package
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.13'
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: artifacts/release
+      - name: Generate and verify checksums and build manifest
+        run: |
+          python scripts/release.py manifest --directory artifacts/release --commit "$GITHUB_SHA"
+          python scripts/release.py validate --directory artifacts/release --commit "$GITHUB_SHA"
+      - name: Create draft for real-machine testing (never publish)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/release.py draft --directory artifacts/release --commit "$GITHUB_SHA" --repository "$GITHUB_REPOSITORY"
+      - name: Link the draft in the workflow summary
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(python scripts/release.py version)
+          url=$(gh release view "v$version" --repo "$GITHUB_REPOSITORY" --json url --jq .url)
+          echo "Draft ready for real-machine testing: $url" >> "$GITHUB_STEP_SUMMARY"
+          echo "This workflow does not publish releases." >> "$GITHUB_STEP_SUMMARY"
