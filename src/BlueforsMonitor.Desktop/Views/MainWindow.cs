@@ -1,14 +1,11 @@
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Controls.Primitives;
 using static BlueforsAvalonia.ViewElements;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
-using Avalonia.Styling;
-using Avalonia.Platform.Storage;
 using ScottPlot.Avalonia;
 using System.Globalization;
 using System.Diagnostics;
@@ -22,7 +19,7 @@ public sealed partial class MainWindow : Window
     readonly DateRangeControl _dateRange = new();
     readonly ChannelPanelControl _channels = new();
     readonly MonitorViewModel _viewModel = new();
-    DataStore _store;
+    readonly MonitoringSession _session;
     readonly AppSettings _settings = AppSettings.Load();
     readonly AvaPlot _plot = new();
     readonly CursorOverlay _overlay = new();
@@ -35,25 +32,15 @@ public sealed partial class MainWindow : Window
     bool _dark = true, _changingUi;
     readonly double[] _spans = [3600, 21600, 86400, 604800, 2592000];
     readonly DispatcherTimer _scanTimer = new() { Interval = TimeSpan.FromSeconds(10) };
-    CancellationTokenSource _sourceCancel = new();
-    LogImporter? _importer;
-    bool _scanBusy;
     string? _contextChannel;
-    readonly Dictionary<string, ScottPlot.AxisPanels.RightAxis> _axes = new();
-    readonly HashSet<string> _manual = [];
+    readonly AxisController _axisController;
     string ChannelColor(string key) => UiTheme.Channel(key, _dark);
     readonly DispatcherTimer _loadTimer = new() { Interval = TimeSpan.FromMilliseconds(130) };
     readonly DispatcherTimer _cursorTimer = new() { Interval = TimeSpan.FromMilliseconds(50) };
-    CancellationTokenSource? _loadCancel;
-    WindowData? _data;
-    long _dataRevision = -1;
     EventRecord? _selected;
     ScottPlot.Plottables.HorizontalSpan? _shade;
-    double _left, _right;
     double? _cursorTime, _marker;
-    long _cursorBucket = long.MinValue;
-    Dictionary<string, Sample[]> _cursorSamples = new();
-    bool _cursorBusy, _closed, _arrangePending;
+    bool _closed, _arrangePending;
     double _cursorRendered = double.NaN;
     string? _dragChannel;
     bool _dragging;
@@ -66,7 +53,8 @@ public sealed partial class MainWindow : Window
 
     public MainWindow(DataStore store)
     {
-        _store = store;
+        _session = new MonitoringSession(store, AppSettings.Root);
+        _axisController = new AxisController(_plot.Plot, _dark);
         Title = "Bluefors Monitor · Avalonia 0.4";
         Width = 1460;
         Height = 980;
@@ -93,14 +81,14 @@ public sealed partial class MainWindow : Window
             UpdateMetadata();
             if (_settings.LogRoot is string root && Directory.Exists(root))
                 await OpenLogs(root);
-            else if (_store.Snapshot.Events.Length > 0)
-                await ShowEvent(_store.Snapshot.Events[0]);
-            else if (_store.HasData)
-                Navigate(_store.Snapshot.Bounds[1] - 21600, _store.Snapshot.Bounds[1], true);
+            else if (_session.Store.Snapshot.Events.Length > 0)
+                await ShowEvent(_session.Store.Snapshot.Events[0]);
+            else if (_session.Store.HasData)
+                Navigate(_session.Store.Snapshot.Bounds[1] - 21600, _session.Store.Snapshot.Bounds[1], true);
             else
                 _viewModel.Status = "选择 Logfiles 目录，开始建立本机索引。";
         };
-        Closed += (_, _) => { _closed = true; _loadCancel?.Cancel(); _sourceCancel.Cancel(); _loadTimer.Stop(); _cursorTimer.Stop(); _scanTimer.Stop(); };
+        Closed += (_, _) => { _closed = true; _session.Dispose(); _loadTimer.Stop(); _cursorTimer.Stop(); _scanTimer.Stop(); };
     }
     void BuildUi()
     {
@@ -121,7 +109,7 @@ public sealed partial class MainWindow : Window
                 return;
             _settings.Follow = _follow.IsChecked == true;
             _settings.Save();
-            if (_follow.IsChecked == true && _store.HasData)
+            if (_follow.IsChecked == true && _session.Store.HasData)
                 FollowLatest(true);
         };
         _span.SelectionChanged += (_, _) =>
@@ -130,9 +118,9 @@ public sealed partial class MainWindow : Window
                 return;
             _settings.FollowSeconds = _spans[_span.SelectedIndex];
             _settings.Save();
-            if (_store.HasData)
+            if (_session.Store.HasData)
             {
-                double anchor = _follow.IsChecked == true ? _store.Snapshot.Bounds[1] : (_left + _right) / 2 + _settings.FollowSeconds / 2;
+                double anchor = _follow.IsChecked == true ? _session.Store.Snapshot.Bounds[1] : (_axisController.Left + _axisController.Right) / 2 + _settings.FollowSeconds / 2;
                 Navigate(anchor - _settings.FollowSeconds, anchor, true, false);
             }
         };
@@ -179,7 +167,7 @@ public sealed partial class MainWindow : Window
             _settings.VisibleChannels = _channels.VisibleChannels;
             _settings.Save();
             SyncAxes();
-            if (_data != null)
+            if (_session.Data != null)
             {
                 Draw();
                 Arrange(true);
@@ -204,7 +192,7 @@ public sealed partial class MainWindow : Window
         border.Bind(Border.BorderBrushProperty, border.GetResourceObservable("Border"));
         Put(plotRegion, border, 0, 0);
         _band.IsVisible = _settings.EventBandVisible;
-        _band.Events = _store.Snapshot.Events;
+        _band.Events = _session.Store.Snapshot.Events;
         _band.Picked += (item, jump) => { SelectEvent(item); if (jump) LastLoad = ShowEvent(item); };
         Put(plotRegion, _band, 0, 1);
         var readout = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
@@ -230,8 +218,6 @@ public sealed partial class MainWindow : Window
         Put(root, footer, 0, 5);
         InitializeLayout();
     }
-    static double Factor(string key) => key == "CH6" ? 1000 : 1;
-    static string Unit(string key) => key == "CH6" ? "mK" : key.StartsWith("CH") ? "K" : "原值";
     void ConfigurePlot()
     {
         _plot.UserInputProcessor.Disable();
@@ -243,23 +229,11 @@ public sealed partial class MainWindow : Window
         plot.Axes.Left.IsVisible = false;
         plot.Axes.Right.IsVisible = false;
         plot.Axes.Top.IsVisible = false;
-        SetDateAxis(plot);
+        _axisController.SetDateAxis(_dark);
         plot.Grid.MajorLineColor = SColor.FromHex(UiTheme.Hex("MajorGrid", _dark));
         plot.Grid.MinorLineColor = SColor.FromHex(UiTheme.Hex("MinorGrid", _dark));
         plot.Grid.YAxis = plot.Axes.Left;
         plot.Axes.SetLimitsY(0, 1);
-        for (int i = 0; i < DataStore.Keys.Length; i++)
-        {
-            var key = DataStore.Keys[i];
-            var axis = plot.Axes.AddRightAxis();
-            axis.Color(SColor.FromHex(ChannelColor(key)));
-            axis.LabelStyle.Text = key + " · " + Unit(key);
-            axis.LabelStyle.FontSize = 10;
-            axis.TickLabelStyle.FontSize = 10;
-            axis.MinimumSize = key == "P2" ? 80 : 65;
-            axis.TickGenerator = new ScottPlot.TickGenerators.NumericAutomatic { TargetTickCount = 4, LabelFormatter = v => v.ToString("G5", CultureInfo.InvariantCulture) };
-            _axes[key] = axis;
-        }
         _plot.AddHandler(PointerPressedEvent, PlotPressed, RoutingStrategies.Tunnel);
         _plot.AddHandler(PointerMovedEvent, PlotMoved, RoutingStrategies.Tunnel);
         _plot.AddHandler(PointerReleasedEvent, PlotReleased, RoutingStrategies.Tunnel);
@@ -267,110 +241,68 @@ public sealed partial class MainWindow : Window
         _plot.ContextMenu = CreateMenu();
         _plot.PointerCaptureLost += (_, _) => { _dragging = false; _dragChannel = null; };
     }
-    ScottPlot.IXAxis SetDateAxis(ScottPlot.Plot plot)
-    {
-        var axis = plot.Axes.DateTimeTicksBottom();
-        axis.Color(SColor.FromHex(UiTheme.Hex("Axis", _dark)));
-        axis.TickGenerator = new ScottPlot.TickGenerators.DateTimeAutomatic { MaxTickCount = 8, LabelFormatter = d => (_right - _left) > 3 * 86400 ? d.ToString("MM-dd") : d.ToString("MM-dd\nHH:mm") };
-        axis.TickLabelStyle.FontSize = 11;
-        return axis;
-    }
     void Navigate(double left, double right, bool arrange = false, bool stopFollow = true)
     {
         if (stopFollow)
             StopFollowing();
         SetRange(left, right);
         _arrangePending |= arrange;
-        _dateRange.SetRange(_left, _right);
+        _dateRange.SetRange(_axisController.Left, _axisController.Right);
         LastLoad = LoadVisible();
     }
     void SetRange(double left, double right)
     {
-        if (!double.IsFinite(left) || !double.IsFinite(right) || right <= left)
-            return;
-        double span = Math.Clamp(right - left, 60, Math.Max(365 * 86400, (_store.Snapshot.Bounds[1] - _store.Snapshot.Bounds[0]) * 1.2));
-        double center = (left + right) / 2;
-        _left = center - span / 2;
-        _right = center + span / 2;
-        _plot.Plot.Axes.SetLimitsX(Clock.Plot(_left), Clock.Plot(_right));
-        _eventList.SetRange(_left, _right);
-        _timeSummary.Text = $"{Clock.At(_left):MM-dd HH:mm} — {Clock.At(_right):MM-dd HH:mm}";
+        _axisController.SetRange(left, right, _session.Store.Snapshot.Bounds[1] - _session.Store.Snapshot.Bounds[0]);
+        _eventList.SetRange(_axisController.Left, _axisController.Right);
+        _timeSummary.Text = $"{Clock.At(_axisController.Left):MM-dd HH:mm} — {Clock.At(_axisController.Right):MM-dd HH:mm}";
         _plot.Refresh();
         UpdateOverlay();
     }
     async Task LoadVisible(bool force = false)
     {
-        if (!_store.HasData)
+        if (!_session.Store.HasData)
             return;
-        var store = _store;
-        var revision = store.Revision;
-        if (!force && _dataRevision == revision && _data != null && _data.Left <= _left && _data.Right >= _right && _data.Resolution == DataStore.ResolutionFor(_right - _left))
-        {
-            if (_arrangePending)
-            {
-                Arrange();
-                _arrangePending = false;
-            }
-            return;
-        }
-        _loadCancel?.Cancel();
-        var cancellation = new CancellationTokenSource();
-        _loadCancel = cancellation;
-        double span = _right - _left, left = _left - span * .2, right = _right + span * .2;
-        _viewModel.Status = "正在读取当前时间范围…";
         try
         {
-            var data = await Task.Run(() => store.Read(left, right, span, cancellation.Token));
-            if (cancellation.IsCancellationRequested || _closed || !ReferenceEquals(store, _store) || revision != store.Revision)
+            var request = _session.LoadAsync(_axisController.Left, _axisController.Right, force);
+            if (!request.IsCompleted)
+                _viewModel.Status = "正在读取当前时间范围…";
+            var result = await request;
+            if (result == null)
                 return;
-            _data = data;
-            _dataRevision = revision;
             var drawTimer = Stopwatch.StartNew();
-            Draw();
+            if (result.Changed)
+                Draw();
             if (_arrangePending)
             {
                 Arrange();
                 _arrangePending = false;
             }
-            _viewModel.Status = $"{data.Count:N0} 个绘图点 · {(data.Resolution == 0 ? "原始样本" : $"{data.Resolution / 60} 分钟极值概览")} · 读取 {data.Milliseconds:F0} ms / 准备绘图 {drawTimer.Elapsed.TotalMilliseconds:F0} ms · 光标查原始记录 · 共 {_store.Snapshot.Counts.Values.Sum():N0} 条";
+            if (!result.Changed)
+                return;
+            var data = result.Data;
+            _viewModel.Status = $"{data.Count:N0} 个绘图点 · {(data.Resolution == 0 ? "原始样本" : $"{data.Resolution / 60} 分钟极值概览")} · 读取 {data.Milliseconds:F0} ms / 准备绘图 {drawTimer.Elapsed.TotalMilliseconds:F0} ms · 光标查原始记录 · 共 {_session.Store.Snapshot.Counts.Values.Sum():N0} 条";
             _cursorRendered = double.NaN;
         }
-        catch (OperationCanceledException) { }
         catch (Exception ex) { _viewModel.Status = "读取失败：" + ex.Message; Console.Error.WriteLine(ex); }
     }
     void Draw()
     {
-        if (_data is null)
+        if (_session.Data is null)
             return;
         SyncAxes();
-        _shade = PlotController.Render(_plot.Plot, _data, _axes,
+        _shade = PlotController.Render(_plot.Plot, _session.Data, _axisController.Axes,
             _channels.VisibleChannels.ToHashSet(), ChannelColor, _dark);
         UpdateSelection();
         _plot.Refresh();
     }
     void Arrange(bool keepManual = false)
     {
-        if (_data is null)
-            return;
-        var keys = _channels.VisibleChannels;
-        for (int i = 0; i < keys.Length; i++)
-        {
-            string key = keys[i];
-            if (keepManual && _manual.Contains(key))
-                continue;
-            var ys = _data.Series[key].Points.Where(p => p.T >= _left && p.T <= _right).Select(p => p.V * Factor(key)).ToArray();
-            double min = ys.Length == 0 ? 0 : ys.Min(), max = ys.Length == 0 ? 1 : ys.Max();
-            double height = Math.Max(max - min, Math.Max(Math.Abs((max + min) / 2) * .0002, .000001));
-            double total = height * keys.Length * 1.38, center = (max + min) / 2;
-            double position = 1 - (i + .5) / keys.Length;
-            _plot.Plot.Axes.SetLimitsY(center - position * total, center + (1 - position) * total, _axes[key]);
-        }
-        if (!keepManual)
-            _manual.Clear();
+        _axisController.Arrange(_session.Data, _channels.VisibleChannels, keepManual);
         UpdateModes();
         _plot.Refresh();
     }
-    void UpdateModes() => _channels.SetManualChannels(_manual);
+    void UpdateModes() => _channels.SetManualChannels(_axisController.ManualChannels);
     void SelectEvent(EventRecord item)
     {
         _selected = item;
@@ -401,7 +333,7 @@ public sealed partial class MainWindow : Window
         _cursorRendered = double.NaN;
         SetRange(item.Start - 1800, item.End + 1800);
         if (_dateRange.Start.Value is null)
-            _dateRange.SetRange(_left, _right);
+            _dateRange.SetRange(_axisController.Left, _axisController.Right);
         LastLoad = LoadVisible();
         await LastLoad;
     }
@@ -411,11 +343,7 @@ public sealed partial class MainWindow : Window
         double scale = _plot.DisplayScale;
         return new Rect(rect.Left / scale, rect.Top / scale, Math.Max(0, rect.Width / scale), Math.Max(0, rect.Height / scale));
     }
-    string? AxisAt(Point point)
-    {
-        var axis = _plot.Plot.GetAxis(new ScottPlot.Pixel((float)(point.X * _plot.DisplayScale), (float)(point.Y * _plot.DisplayScale)));
-        return _axes.FirstOrDefault(p => ReferenceEquals(p.Value, axis)).Key;
-    }
+    string? AxisAt(Point point) => _axisController.AxisAt(new ScottPlot.Pixel((float)(point.X * _plot.DisplayScale), (float)(point.Y * _plot.DisplayScale)));
     void PlotPressed(object? sender, PointerPressedEventArgs e)
     {
         if (e.GetCurrentPoint(_plot).Properties.IsRightButtonPressed)
@@ -433,13 +361,13 @@ public sealed partial class MainWindow : Window
         _dragging = true;
         _dragChannel = key;
         _dragPoint = point;
-        _dragLeft = _left;
-        _dragRight = _right;
+        _dragLeft = _axisController.Left;
+        _dragRight = _axisController.Right;
         if (key != null)
         {
             _channels.SelectedAxis = key;
-            _dragMin = _axes[key].Min;
-            _dragMax = _axes[key].Max;
+            _dragMin = _axisController.Axes[key].Min;
+            _dragMax = _axisController.Axes[key].Max;
         }
         e.Pointer.Capture(_plot);
         e.Handled = true;
@@ -454,9 +382,7 @@ public sealed partial class MainWindow : Window
         {
             if (_dragChannel is string key)
             {
-                double shift = (point.Y - _dragPoint.Y) / rect.Height * (_dragMax - _dragMin);
-                _plot.Plot.Axes.SetLimitsY(_dragMin + shift, _dragMax + shift, _axes[key]);
-                _manual.Add(key);
+                _axisController.Pan(key, _dragMin, _dragMax, (point.Y - _dragPoint.Y) / rect.Height);
                 UpdateModes();
                 _plot.Refresh();
             }
@@ -471,7 +397,7 @@ public sealed partial class MainWindow : Window
         }
         if (rect.Contains(point))
         {
-            _cursorTime = _left + (point.X - rect.Left) / rect.Width * (_right - _left);
+            _cursorTime = _axisController.Left + (point.X - rect.Left) / rect.Width * (_axisController.Right - _axisController.Left);
             UpdateOverlay();
         }
     }
@@ -496,24 +422,22 @@ public sealed partial class MainWindow : Window
         double factor = Math.Exp(-Math.Clamp(delta, -8, 8) * .14);
         if (key != null)
         {
-            var axis = _axes[key];
+            var axis = _axisController.Axes[key];
             double anchor = axis.Max - (point.Y - rect.Top) / rect.Height * (axis.Max - axis.Min);
             ZoomChannel(key, factor, anchor);
         }
         else if (rect.Contains(point))
         {
             StopFollowing();
-            double anchor = _left + (point.X - rect.Left) / rect.Width * (_right - _left);
-            SetRange(anchor + (_left - anchor) * factor, anchor + (_right - anchor) * factor);
+            double anchor = _axisController.Left + (point.X - rect.Left) / rect.Width * (_axisController.Right - _axisController.Left);
+            SetRange(anchor + (_axisController.Left - anchor) * factor, anchor + (_axisController.Right - anchor) * factor);
             QueueLoad();
         }
         e.Handled = true;
     }
     void ZoomChannel(string key, double factor, double anchor)
     {
-        var axis = _axes[key];
-        _plot.Plot.Axes.SetLimitsY(anchor + (axis.Min - anchor) * factor, anchor + (axis.Max - anchor) * factor, axis);
-        _manual.Add(key);
+        _axisController.Zoom(key, factor, anchor);
         UpdateModes();
         _plot.Refresh();
     }
@@ -525,9 +449,9 @@ public sealed partial class MainWindow : Window
     void UpdateOverlay()
     {
         var rect = DataRect();
-        if (rect.Width <= 0 || _right <= _left)
+        if (rect.Width <= 0 || _axisController.Right <= _axisController.Left)
             return;
-        double X(double t) => rect.Left + (t - _left) / (_right - _left) * rect.Width;
+        double X(double t) => rect.Left + (t - _axisController.Left) / (_axisController.Right - _axisController.Left) * rect.Width;
         double? cursor = _cursorTime.HasValue ? X(_cursorTime.Value) : null;
         double? marker = _marker.HasValue ? X(_marker.Value) : null;
         if (_overlay.DataRect != rect || _overlay.CursorX != cursor || _overlay.MarkerX != marker)
@@ -537,10 +461,10 @@ public sealed partial class MainWindow : Window
             _overlay.MarkerX = marker;
             _overlay.InvalidateVisual();
         }
-        if (_band.Left != _left || _band.Right != _right || _band.PlotLeft != rect.Left + 1 || _band.PlotRight != rect.Right + 1)
+        if (_band.Left != _axisController.Left || _band.Right != _axisController.Right || _band.PlotLeft != rect.Left + 1 || _band.PlotRight != rect.Right + 1)
         {
-            _band.Left = _left;
-            _band.Right = _right;
+            _band.Left = _axisController.Left;
+            _band.Right = _axisController.Right;
             _band.PlotLeft = rect.Left + 1;
             _band.PlotRight = rect.Right + 1;
             _band.InvalidateVisual();
@@ -548,27 +472,17 @@ public sealed partial class MainWindow : Window
     }
     async Task UpdateReadout()
     {
-        if (!_store.HasData || _cursorTime is not double time || _cursorBusy || _cursorRendered == time)
+        if (_cursorTime is not double time || _cursorRendered == time)
             return;
-        _cursorBusy = true;
-        var store = _store;
         try
         {
-            long bucket = (long)Math.Floor(time / 300);
-            if (bucket != _cursorBucket)
-            {
-                _cursorSamples = await Task.Run(() => store.ReadCursorBucket(bucket));
-                _cursorBucket = bucket;
-            }
-            if (_closed || !ReferenceEquals(store, _store))
-            {
-                _cursorBucket = long.MinValue;
+            var samples = await _session.ReadCursorAsync(time);
+            if (samples == null)
                 return;
-            }
             foreach (var key in DataStore.Keys)
             {
-                var sample = DataStore.Nearest(_cursorSamples.GetValueOrDefault(key, []), time);
-                string text = !_channels.IsChannelVisible(key) ? "已隐藏" : sample == null ? "无记录" : (sample.V * Factor(key)).ToString(key == "CH6" ? "F3" : "G6", CultureInfo.InvariantCulture) + " " + Unit(key);
+                var sample = DataStore.Nearest(samples.GetValueOrDefault(key, []), time);
+                string text = !_channels.IsChannelVisible(key) ? "已隐藏" : sample == null ? "无记录" : (sample.V * AxisController.Factor(key)).ToString(key == "CH6" ? "F3" : "G6", CultureInfo.InvariantCulture) + " " + AxisController.Unit(key);
                 string tooltip = sample == null ? "光标前后 90 秒内没有原始记录" : $"原始样本 {Clock.At(sample.T):yyyy-MM-dd HH:mm:ss} · 与光标相差 {sample.T - time:+0.0;-0.0;0} 秒";
                 _channels.SetReadout(key, text, tooltip);
             }
@@ -576,6 +490,5 @@ public sealed partial class MainWindow : Window
             _cursorRendered = time;
         }
         catch (Exception ex) { _cursorLabel.Text = "读数读取失败：" + ex.Message; }
-        finally { _cursorBusy = false; }
     }
 }

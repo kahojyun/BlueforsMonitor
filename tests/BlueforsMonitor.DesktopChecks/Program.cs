@@ -49,6 +49,7 @@ public sealed class CheckApp : App
     }
     static async Task Check(MainWindow w)
     {
+        AxisControllerChecks.Run();
         var dateRange = w.GetVisualDescendants().OfType<DateRangeControl>().Single();
         var eventList = w.GetVisualDescendants().OfType<EventListControl>().Single();
         var channels = w.GetVisualDescendants().OfType<ChannelPanelControl>().Single();
@@ -76,13 +77,13 @@ public sealed class CheckApp : App
         Require(Field<TextBlock>(w, "_status").Text == model.Status &&
             Field<TextBlock>(w, "_sourceInfo").Text == model.Source &&
             eventList.CountText == model.EventCount && eventList.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == model.EventCount), "Compiled bindings must propagate property changes");
-        Require(!Field<DataStore>(w, "_store").HasData, "First launch must be empty");
+        Require(!Field<MonitoringSession>(w, "_session").Store.HasData, "First launch must be empty");
         string logs = Path.Combine(AppSettings.Root, "logs");
         Directory.CreateDirectory(logs);
         string file = Path.Combine(logs, "CH6 T 26-11-05.log");
         File.WriteAllLines(file, Enumerable.Range(0, 60).Select(i => $"05-11-26,10:{i:00}:00,{(i >= 20 && i <= 22 ? "0.028" : "0.012")}"));
         await (Task)Call(w, "OpenLogs", logs)!;
-        var store = Field<DataStore>(w, "_store");
+        var store = Field<MonitoringSession>(w, "_session").Store;
         Require(store.Snapshot.Events.Length == 1, "Event indexing");
         var plot = Field<AvaPlot>(w, "_plot");
         await Task.Delay(250);
@@ -97,7 +98,7 @@ public sealed class CheckApp : App
         var multiple = channels.GetVisualDescendants().OfType<CheckBox>().Single(c => Equals(c.Content, "多纵轴"));
         multiple.IsChecked = false;
         axisSelector.SelectedItem = "CH5";
-        var axes = Field<Dictionary<string, ScottPlot.AxisPanels.RightAxis>>(w, "_axes");
+        var axes = Field<AxisController>(w, "_axisController").Axes;
         Require(!axes["CH6"].IsVisible && axes["CH5"].IsVisible && !AppSettings.Load().MultipleAxes, "Single-axis selection and persistence");
         multiple.IsChecked = true;
         axisSelector.SelectedItem = "CH6";
@@ -134,12 +135,12 @@ public sealed class CheckApp : App
         from.Date.IsDropDownOpen = false;
         var follow = Field<CheckBox>(w, "_follow");
         bool? originalFollow = follow.IsChecked;
-        double originalLeft = Field<double>(w, "_left"), originalRight = Field<double>(w, "_right");
+        double originalLeft = Field<AxisController>(w, "_axisController").Left, originalRight = Field<AxisController>(w, "_axisController").Right;
         void Reject(string expected)
         {
             ApplyDates();
             Require(dateRange.ValidationMessage?.Contains(expected) == true, "Specific inline date error: " + expected + " / " + dateRange.ValidationMessage);
-            Require(Field<double>(w, "_left") == originalLeft && Field<double>(w, "_right") == originalRight &&
+            Require(Field<AxisController>(w, "_axisController").Left == originalLeft && Field<AxisController>(w, "_axisController").Right == originalRight &&
                 follow.IsChecked == originalFollow, "Invalid dates must preserve view and follow mode");
             Require(rangeRequests == 0, "Invalid input must not emit navigation requests");
         }
@@ -202,14 +203,14 @@ public sealed class CheckApp : App
         }
         SetTheme("跟随系统");
 
-        Require(Field<double>(w, "_left") == start, "Date apply");
+        Require(Field<AxisController>(w, "_axisController").Left == start, "Date apply");
         int selectionRequests = 0, replayRequests = 0;
         eventList.SelectionRequested += _ => selectionRequests++;
         eventList.ReplayRequested += _ => replayRequests++;
         var rows = eventList.GetVisualDescendants().OfType<TableView>().Single();
         rows.SelectedItem = store.Snapshot.Events[0];
         Require(selectionRequests == 1 && replayRequests == 0 && ReferenceEquals(Field<EventRecord>(w, "_selected"), rows.SelectedItem), "Selection must reach window exactly once");
-        Require(Field<double>(w, "_left") == start, "Selection must not jump");
+        Require(Field<AxisController>(w, "_axisController").Left == start, "Selection must not jump");
         var pointer = new Avalonia.Input.Pointer(1, PointerType.Mouse, true);
         var pointerArgs = new PointerEventArgs(InputElement.PointerReleasedEvent, rows, pointer, w, default, 0, new PointerPointProperties(), KeyModifiers.None);
         Require(rows.Columns.Count == 7 && rows.CanUserResizeColumns, "Seven resizable TableView columns");
@@ -227,7 +228,7 @@ public sealed class CheckApp : App
         }
         header.RaiseEvent(new TappedEventArgs(InputElement.DoubleTappedEvent, pointerArgs));
         grip.RaiseEvent(new TappedEventArgs(InputElement.DoubleTappedEvent, pointerArgs));
-        Require(replayRequests == 0 && Field<double>(w, "_left") == start, "Header and grip double taps must not replay an event");
+        Require(replayRequests == 0 && Field<AxisController>(w, "_axisController").Left == start, "Header and grip double taps must not replay an event");
         var eventRow = rows.GetVisualDescendants().OfType<TableViewRow>().First();
         Require(Equals(ToolTip.GetTip(eventRow), store.Snapshot.Events[0].Detail), "Row tooltip must retain event details");
         eventRow.RaiseEvent(new TappedEventArgs(InputElement.DoubleTappedEvent, pointerArgs));
@@ -235,7 +236,7 @@ public sealed class CheckApp : App
             await w.LastLoad;
         Require(selectionRequests == 1 && replayRequests == 1, "Replay must not recursively select");
         Require(from.Value == Clock.At(start), "Replay must preserve entered dates");
-        double before = Field<double>(w, "_right");
+        double before = Field<AxisController>(w, "_axisController").Right;
         int requestsBeforeRefresh = selectionRequests;
         double resizedWidth = rows.Columns[0].Width.Value;
         Call(w, "UpdateMetadata");
@@ -243,13 +244,13 @@ public sealed class CheckApp : App
         Require(eventList.SelectedEvent?.Start == store.Snapshot.Events[0].Start && selectionRequests == requestsBeforeRefresh, "Refresh must retain selection without user events");
         File.AppendAllText(file, "05-11-26,11:00:00,0.013\n");
         await (Task)Call(w, "SyncCurrent", true)!;
-        Require(Field<double>(w, "_right") == before, "Paused view moved");
+        Require(Field<AxisController>(w, "_axisController").Right == before, "Paused view moved");
         Field<CheckBox>(w, "_follow").IsChecked = true;
         if (w.LastLoad != null)
             await w.LastLoad;
         File.AppendAllText(file, "05-11-26,11:01:00,0.013\n");
         await (Task)Call(w, "SyncCurrent", true)!;
-        Require(Field<double>(w, "_right") == start + 3660, "Follow did not advance");
+        Require(Field<AxisController>(w, "_axisController").Right == start + 3660, "Follow did not advance");
         await CheckLayout(w, plot, dateRange, eventList, dateToggle, focusToggle);
 
     }
@@ -276,16 +277,16 @@ public sealed class CheckApp : App
         await Task.Delay(100);
         Require(!events.Expanded && !splitter.IsVisible && plot.Bounds.Height > normalHeight + 60, "Collapsing events frees chart height");
         dateToggle.IsChecked = true;
-        double left = Field<double>(w, "_left"), right = Field<double>(w, "_right");
+        double left = Field<AxisController>(w, "_axisController").Left, right = Field<AxisController>(w, "_axisController").Right;
         bool? follow = Field<CheckBox>(w, "_follow").IsChecked;
         Call(w, "ZoomChannel", "CH6", 0.8, 20d);
-        var axis = Field<Dictionary<string, ScottPlot.AxisPanels.RightAxis>>(w, "_axes")["CH6"];
+        var axis = Field<AxisController>(w, "_axisController").Axes["CH6"];
         double axisMin = axis.Min, axisMax = axis.Max;
         focusToggle.IsChecked = true;
         await Task.Delay(150);
         Require(axis.Min == axisMin && axis.Max == axisMax, "Focus must preserve manual axis limits");
         Require(!dates.IsVisible && !events.IsVisible && plot.Bounds.Height > normalHeight + 100, "Focus hides auxiliary areas and expands plot");
-        Require(left == Field<double>(w, "_left") && right == Field<double>(w, "_right") && follow == Field<CheckBox>(w, "_follow").IsChecked, "Layout must preserve range and follow");
+        Require(left == Field<AxisController>(w, "_axisController").Left && right == Field<AxisController>(w, "_axisController").Right && follow == Field<CheckBox>(w, "_follow").IsChecked, "Layout must preserve range and follow");
         Require(AppSettings.Load().Layout.FocusMode && AppSettings.Load().Layout.DatesExpanded && !AppSettings.Load().Layout.EventsExpanded, "Focus must preserve underlying layout preferences");
         Console.WriteLine($"Layout focus: plot {plot.Bounds.Height:F0} / window {w.Bounds.Height:F0}");
         Capture(w, "focus");
@@ -314,7 +315,8 @@ public sealed class CheckApp : App
             await Task.Delay(100);
             Capture(w, "compact-" + (mode == "浅色" ? "light" : "dark"));
         }
-        w.Width = 1000; w.Height = 640;
+        w.Width = 1000;
+        w.Height = 640;
         dateToggle.IsChecked = true;
         await Task.Delay(200);
         Require(plot.Bounds.Height >= 179 && events.Bounds.Height >= 120, "Small window keeps chart and events usable");
@@ -332,7 +334,8 @@ public sealed class CheckApp : App
     }
     static void Capture(MainWindow window, string name)
     {
-        if (Environment.GetEnvironmentVariable("BLUEFORS_CHECK_SCREENSHOTS") is not string directory) return;
+        if (Environment.GetEnvironmentVariable("BLUEFORS_CHECK_SCREENSHOTS") is not string directory)
+            return;
         Directory.CreateDirectory(directory);
         using var bitmap = new RenderTargetBitmap(new PixelSize((int)window.Bounds.Width * 2, (int)window.Bounds.Height * 2), new Vector(192, 192));
         bitmap.Render(window);

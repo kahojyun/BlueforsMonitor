@@ -1,6 +1,4 @@
-using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Avalonia.Styling;
 
@@ -24,29 +22,17 @@ public sealed partial class MainWindow
         plot.Axes.Color(ScottPlot.Color.FromHex(UiTheme.Hex("Axis", _dark)));
         plot.Grid.MajorLineColor = ScottPlot.Color.FromHex(UiTheme.Hex("MajorGrid", _dark));
         plot.Grid.MinorLineColor = ScottPlot.Color.FromHex(UiTheme.Hex("MinorGrid", _dark));
-        foreach (var pair in _axes)
-            pair.Value.Color(ScottPlot.Color.FromHex(ChannelColor(pair.Key)));
+        _axisController.ApplyPalette(_dark);
         _band.Dark = _dark;
         _band.InvalidateVisual();
         _overlay.Dark = _dark;
         _overlay.InvalidateVisual();
-        if (_data != null)
+        if (_session.Data != null)
             Draw();
         else
             _plot.Refresh();
     }
-    void SyncAxes()
-    {
-        // Hidden axes must leave the layout, not just stop painting their ticks.
-        foreach (var axis in _axes.Values)
-            _plot.Plot.Axes.Remove(axis);
-        foreach (var key in _channels.VisibleChannels)
-        {
-            _axes[key].IsVisible = _settings.MultipleAxes || key == _channels.SelectedAxis;
-            _axes[key].MinimumSize = _axes[key].IsVisible ? (key == "P2" ? 80 : 65) : 0;
-            _plot.Plot.Axes.AddRightAxis(_axes[key]);
-        }
-    }
+    void SyncAxes() => _axisController.Sync(_channels.VisibleChannels, _settings.MultipleAxes, _channels.SelectedAxis);
     void StopFollowing()
     {
         if (_follow.IsChecked != true)
@@ -59,44 +45,24 @@ public sealed partial class MainWindow
     }
     void FollowLatest(bool arrange)
     {
-        if (!_store.HasData)
+        if (!_session.Store.HasData)
             return;
         _arrangePending |= arrange;
-        double right = _store.Snapshot.Bounds[1];
+        double right = _session.Store.Snapshot.Bounds[1];
         SetRange(right - _settings.FollowSeconds, right);
         LastLoad = LoadVisible(true);
     }
     void ExpandAutomaticAxes()
     {
-        if (_data == null)
-            return;
-        var keys = _channels.VisibleChannels;
-        for (int i = 0; i < keys.Length; i++)
-        {
-            string key = keys[i];
-            if (_manual.Contains(key))
-                continue;
-            var values = _data.Series[key].Points.Where(p => p.T >= _left && p.T <= _right).Select(p => p.V * Factor(key)).ToArray();
-            if (values.Length == 0)
-                continue;
-            var axis = _axes[key];
-            double height = axis.Max - axis.Min;
-            double low = axis.Min + (1 - (i + .94) / keys.Length) * height, high = axis.Min + (1 - (i + .06) / keys.Length) * height;
-            double min = values.Min(), max = values.Max();
-            if (min >= low && max <= high)
-                continue;
-            double total = Math.Max(height, (max - min) * keys.Length * 1.45);
-            double center = (max + min) / 2, position = 1 - (i + .5) / keys.Length;
-            _plot.Plot.Axes.SetLimitsY(center - position * total, center + (1 - position) * total, axis);
-        }
+        _axisController.ExpandAutomatic(_session.Data, _channels.VisibleChannels);
         _plot.Refresh();
     }
     void UpdateMetadata()
     {
-        var data = _store.Snapshot;
-        _viewModel.Source = _store.HasData
-            ? $"{(_store.IsLive ? _store.LogRoot : "历史缓存")}   ·   {Clock.At(data.Bounds[0]):yyyy.MM.dd} — {Clock.At(data.Bounds[1]):yyyy.MM.dd HH:mm}   ·   {data.Counts.Values.Sum():N0} 条" + (_store.IsLive ? $"   ·   最新记录距今 {Math.Max(0, (DateTimeOffset.UtcNow.ToUnixTimeSeconds() - data.Bounds[1]) / 60):F0} 分钟" : "")
-            : (_store.LogRoot ?? "选择 Logfiles 日志目录开始使用。");
+        var data = _session.Store.Snapshot;
+        _viewModel.Source = _session.Store.HasData
+            ? $"{(_session.Store.IsLive ? _session.Store.LogRoot : "历史缓存")}   ·   {Clock.At(data.Bounds[0]):yyyy.MM.dd} — {Clock.At(data.Bounds[1]):yyyy.MM.dd HH:mm}   ·   {data.Counts.Values.Sum():N0} 条" + (_session.Store.IsLive ? $"   ·   最新记录距今 {Math.Max(0, (DateTimeOffset.UtcNow.ToUnixTimeSeconds() - data.Bounds[1]) / 60):F0} 分钟" : "")
+            : (_session.Store.LogRoot ?? "选择 Logfiles 日志目录开始使用。");
         double? selected = _selected?.Start;
         _eventList.SetEvents(data.Events);
         _band.Events = data.Events;
@@ -118,20 +84,14 @@ public sealed partial class MainWindow
     }
     async Task OpenLogs(string root)
     {
-        _sourceCancel.Cancel();
-        _sourceCancel = new();
-        var token = _sourceCancel.Token;
         _viewModel.Status = "正在索引日志，后台运行中…";
         try
         {
-            var store = await Task.Run(() => LogImporter.OpenDirectory(root, AppSettings.Root), token);
-            var importer = new LogImporter(store);
-            var progress = new Progress<string>(message => { if (!token.IsCancellationRequested) _viewModel.Status = message; });
-            var result = await Task.Run(() => importer.Sync(true, progress, token), token);
-            if (token.IsCancellationRequested || _closed)
+            var result = await _session.OpenAsync(root, message => _viewModel.Status = message);
+            if (result == null)
                 return;
-            SwitchStore(store);
-            _importer = importer;
+            var store = _session.Store;
+            ResetSourceView();
             _settings.LogRoot = root;
             _settings.Save();
             _changingUi = true;
@@ -145,24 +105,21 @@ public sealed partial class MainWindow
             }
             else
                 _viewModel.Status = "未找到有效温度、流量或压力记录；将继续每 10 秒检查目录。";
+            if (_closed || !ReferenceEquals(store, _session.Store))
+                return;
             if (result.Skipped > 0)
                 _viewModel.Status += $" · 跳过 {result.Skipped} 行或文件";
         }
         catch (OperationCanceledException) { }
         catch (Exception ex) { _viewModel.Status = "无法打开日志目录：" + ex.Message; }
     }
-    void SwitchStore(DataStore store)
+    void ResetSourceView()
     {
-        _loadCancel?.Cancel();
+        var store = _session.Store;
         _loadTimer.Stop();
-        _store = store;
-        _data = null;
-        _dataRevision = -1;
         _selected = null;
         _arrangePending = true;
-        _cursorBucket = long.MinValue;
         _cursorRendered = double.NaN;
-        _cursorSamples.Clear();
         _marker = null;
         _cursorTime = store.HasData ? store.Snapshot.Bounds[1] : null;
         _plot.Plot.Clear();
@@ -172,52 +129,50 @@ public sealed partial class MainWindow
     }
     async Task SyncCurrent(bool full)
     {
-        if (_scanBusy || _closed)
+        if (_closed)
             return;
-        var store = _store;
-        var importer = _importer;
-        if (importer == null)
+        if (!_session.IsMonitoring)
         {
             if (full)
             {
-                _cursorBucket = long.MinValue;
+                _session.InvalidateCursor();
                 await LoadVisible(true);
             }
             return;
         }
-        _scanBusy = true;
-        var token = _sourceCancel.Token;
         try
         {
-            long revision = store.Revision;
-            var result = await Task.Run(() => importer.Sync(full, null, token), token);
-            if (_closed || token.IsCancellationRequested || !ReferenceEquals(store, _store))
+            var refresh = await _session.RefreshAsync(full);
+            if (refresh == null)
                 return;
-            if (revision == store.Revision)
+            var result = refresh.Changes;
+            var store = _session.Store;
+            if (!refresh.Changed)
             {
                 if (full)
                     _viewModel.Status = $"没有新有效记录，当前视野与纵轴保持不变。跳过 {result.Skipped} 行或文件。";
                 return;
             }
-            _cursorBucket = long.MinValue;
             _cursorRendered = double.NaN;
             UpdateMetadata();
             if (_follow.IsChecked == true && store.HasData)
             {
                 SetRange(store.Snapshot.Bounds[1] - _settings.FollowSeconds, store.Snapshot.Bounds[1]);
                 await LoadVisible(true);
+                if (_closed || !ReferenceEquals(store, _session.Store))
+                    return;
                 ExpandAutomaticAxes();
             }
-            else if (result.DirtyTo >= _left && result.DirtyFrom <= _right)
+            else if (result.DirtyTo >= _axisController.Left && result.DirtyFrom <= _axisController.Right)
                 await LoadVisible(true);
             else
-                _dataRevision = -1; // Keep the current plot usable; a later pan must reload.
+                _session.InvalidateDisplay(); // Keep the plot usable; a later pan must reload.
+            if (_closed || !ReferenceEquals(store, _session.Store))
+                return;
             if (result.Skipped > 0)
                 _viewModel.Status += $" · 跳过 {result.Skipped} 行或文件";
         }
-        catch (OperationCanceledException) { }
-        catch (Exception ex) { if (ReferenceEquals(store, _store)) _viewModel.Status = "日志更新失败，将在下次轮询重试：" + ex.Message; }
-        finally { _scanBusy = false; }
+        catch (Exception ex) { _viewModel.Status = "日志更新失败，将在下次轮询重试：" + ex.Message; }
     }
     ContextMenu CreateMenu()
     {
@@ -230,25 +185,14 @@ public sealed partial class MainWindow
         }
         Item("适配选中纵轴", () => FitSelectedAxis());
         Item("显示 / 隐藏事件带", () => { _band.IsVisible = !_band.IsVisible; _settings.EventBandVisible = _band.IsVisible; _settings.Save(); });
-        Item("查看全部日志时间范围", () => { if (_store.HasData) Navigate(_store.Snapshot.Bounds[0], _store.Snapshot.Bounds[1], true); });
+        Item("查看全部日志时间范围", () => { if (_session.Store.HasData) Navigate(_session.Store.Snapshot.Bounds[0], _session.Store.Snapshot.Bounds[1], true); });
         Item("标记当前光标", () => { _marker = _cursorTime; _cursorRendered = double.NaN; UpdateOverlay(); });
         Item("清除标记", () => { _marker = null; _cursorRendered = double.NaN; UpdateOverlay(); });
         Item("回看高亮事件", () => { if (_selected != null) LastLoad = ShowEvent(_selected); });
         Item("恢复当前纵轴自动适配", () =>
         {
-            if (_contextChannel is not string key)
-            {
-                Arrange();
-                return;
-            }
-            var keep = new HashSet<string>(_manual);
-            _manual.Clear();
-            foreach (string k in DataStore.Keys.Where(k => k != key))
-                _manual.Add(k);
-            Arrange(true);
-            _manual.Clear();
-            foreach (var k in keep.Where(k => k != key))
-                _manual.Add(k);
+            _axisController.RestoreAutomatic(_session.Data, _channels.VisibleChannels, _contextChannel);
+            _plot.Refresh();
             UpdateModes();
         });
         Item("导出曲线 PNG…", () => _ = ExportPng());
@@ -256,14 +200,7 @@ public sealed partial class MainWindow
     }
     void FitSelectedAxis()
     {
-        if (_data == null || _channels.SelectedAxis is not string key)
-            return;
-        var points = _data.Series[key].Points.Where(p => p.T >= _left && p.T <= _right).Select(p => p.V * Factor(key)).ToArray();
-        if (points.Length == 0)
-            return;
-        double min = points.Min(), max = points.Max(), pad = Math.Max(max - min, Math.Max(Math.Abs(min) * .0002, .000001)) * .1;
-        _plot.Plot.Axes.SetLimitsY(min - pad, max + pad, _axes[key]);
-        _manual.Remove(key);
+        _axisController.Fit(_session.Data, _channels.SelectedAxis);
         UpdateModes();
         _plot.Refresh();
     }
