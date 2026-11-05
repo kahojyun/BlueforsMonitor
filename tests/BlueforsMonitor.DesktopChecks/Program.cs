@@ -50,6 +50,7 @@ public sealed class CheckApp : App
     static async Task Check(MainWindow w)
     {
         AxisControllerChecks.Run();
+        TemperatureUnitChecks.Run();
         var dateRange = w.GetVisualDescendants().OfType<DateRangeControl>().Single();
         var eventList = w.GetVisualDescendants().OfType<EventListControl>().Single();
         var channels = w.GetVisualDescendants().OfType<ChannelPanelControl>().Single();
@@ -252,7 +253,63 @@ public sealed class CheckApp : App
         await (Task)Call(w, "SyncCurrent", true)!;
         Require(Field<AxisController>(w, "_axisController").Right == start + 3660, "Follow did not advance");
         await CheckLayout(w, plot, dateRange, eventList, dateToggle, focusToggle);
+        await CheckTemperatureUnits(w, channels, eventList);
 
+    }
+    static async Task CheckTemperatureUnits(MainWindow w, ChannelPanelControl channels, EventListControl events)
+    {
+        string logs = Path.Combine(AppSettings.Root, "unit-logs");
+        Directory.CreateDirectory(logs);
+        File.WriteAllText(Path.Combine(logs, "CH6 T 26-11-05.log"), "05-11-26,10:00:00,0.5\n05-11-26,11:00:00,2\n05-11-26,12:00:00,0.85\n");
+        File.WriteAllText(Path.Combine(logs, "CH5 T 26-11-05.log"), "05-11-26,10:00:00,0.7\n05-11-26,11:00:00,0.7\n05-11-26,12:00:00,0.7\n");
+        await (Task)Call(w, "OpenLogs", logs)!;
+        var axes = Field<AxisController>(w, "_axisController");
+        var session = Field<MonitoringSession>(w, "_session");
+        Require(axes.Unit("CH6") == "K" && axes.Unit("CH5") == "mK", "Each temperature channel independently selects its unit");
+        Call(w, "ZoomChannel", "CH6", .8, 2d);
+        double min = axes.Axes["CH6"].Min, max = axes.Axes["CH6"].Max;
+        var cached = session.Data;
+        double time = Clock.Unix(new DateTime(2026, 11, 5, 12, 0, 0));
+        Call(w, "Navigate", time - 60, time, false, true);
+        if (w.LastLoad != null)
+            await w.LastLoad;
+        Require(ReferenceEquals(cached, session.Data) && axes.Unit("CH6") == "mK", "Cached navigation also updates units");
+        Require(Math.Abs(axes.Axes["CH6"].Min / 1000 - min) < 1e-12 && Math.Abs(axes.Axes["CH6"].Max / 1000 - max) < 1e-12 && axes.ManualChannels.Contains("CH6"), "Navigation unit switch preserves manual physical bounds");
+        typeof(MainWindow).GetField("_cursorTime", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(w, time);
+        await Task.Delay(150);
+        await (Task)Call(w, "UpdateReadout")!;
+        var readout = channels.GetVisualDescendants().OfType<TextBlock>().Single(t => t.Name == "ReadoutCH6");
+        Require(readout.Text == "850.000 mK", "Cursor readout follows axis unit");
+        Call(w, "Navigate", time - 7200, time, false, true);
+        if (w.LastLoad != null)
+            await w.LastLoad;
+        await Task.Delay(150);
+        await (Task)Call(w, "UpdateReadout")!;
+        Require(axes.Unit("CH6") == "K" && readout.Text == "0.85 K", "Unmoved cursor refreshes when unit changes");
+        Require(Math.Abs(axes.Axes["CH6"].Min - min) < 1e-12 && Math.Abs(axes.Axes["CH6"].Max - max) < 1e-12, "Round-trip navigation preserves manual zoom");
+        // Hold a vertical drag across a data-driven unit change. Its start limits are still in K.
+        void SetField(string name, object? value) => typeof(MainWindow).GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(w, value);
+        SetField("_dragging", true);
+        SetField("_dragChannel", "CH6");
+        SetField("_dragFactor", 1d);
+        SetField("_dragMin", min);
+        SetField("_dragMax", max);
+        SetField("_dragPoint", new Point(50, 50));
+        Call(w, "Navigate", time - 60, time, false, true);
+        if (w.LastLoad != null)
+            await w.LastLoad;
+        await Task.Delay(100);
+        var plot = Field<AvaPlot>(w, "_plot");
+        var position = plot.TranslatePoint(new Point(50, 50), w)!.Value;
+        var pointer = new Avalonia.Input.Pointer(2, PointerType.Mouse, true);
+        var move = new PointerEventArgs(InputElement.PointerMovedEvent, plot, pointer, w, position, 0, new PointerPointProperties(), KeyModifiers.None);
+        Call(w, "PlotMoved", plot, move);
+        Require(axes.Unit("CH6") == "mK" && Math.Abs(axes.Axes["CH6"].Min / 1000 - min) < 1e-12 && Math.Abs(axes.Axes["CH6"].Max / 1000 - max) < 1e-12, "Ongoing drag must convert its captured start limits after unit switch");
+        SetField("_dragging", false);
+        SetField("_dragChannel", null);
+        var headers = events.GetVisualDescendants().OfType<TableView>().Single().Columns.Select(c => c.Header?.ToString()).ToArray();
+        Require(headers.Contains("峰值 / mK") && headers.Contains("升幅 / mK") && headers.Contains("基线 / mK"), "Event table retains mK columns");
+        Console.WriteLine("PASS desktop temperature units: independent channels, cached navigation, manual zoom, stationary cursor, ongoing drag and mK event table");
     }
     static async Task CheckLayout(MainWindow w, AvaPlot plot, DateRangeControl dates, EventListControl events, ToggleButton dateToggle, ToggleButton focusToggle)
     {

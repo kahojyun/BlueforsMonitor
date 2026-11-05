@@ -5,7 +5,7 @@ public static class PlotController
 {
     public static ScottPlot.Plottables.HorizontalSpan Render(ScottPlot.Plot plot, WindowData data,
         IReadOnlyDictionary<string, ScottPlot.AxisPanels.RightAxis> axes, IReadOnlySet<string> visibleKeys,
-        Func<string, string> color, bool dark)
+        Func<string, string> color, Func<string, double> factor, bool dark)
     {
         plot.Clear();
         var shade = plot.Add.HorizontalSpan(0, 0);
@@ -31,7 +31,7 @@ public static class PlotController
                     ys.Add(double.NaN);
                 }
                 xs.Add(Clock.Plot(p.T));
-                ys.Add(p.V * (key == "CH6" ? 1000 : 1));
+                ys.Add(p.V * factor(key));
             }
             if (xs.Count == 0)
                 continue;

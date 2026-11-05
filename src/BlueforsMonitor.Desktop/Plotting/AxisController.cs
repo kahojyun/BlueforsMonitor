@@ -9,6 +9,8 @@ public sealed class AxisController
     readonly ScottPlot.Plot _plot;
     readonly Dictionary<string, ScottPlot.AxisPanels.RightAxis> _axes = new();
     readonly HashSet<string> _manual = [];
+    readonly Dictionary<string, double> _factors = DataStore.Keys.ToDictionary(k => k, k => k == "CH6" ? 1000d : 1d);
+    readonly HashSet<string> _unitInitialized = [];
     public IReadOnlyDictionary<string, ScottPlot.AxisPanels.RightAxis> Axes => _axes;
     public IReadOnlySet<string> ManualChannels => _manual;
     public double Left
@@ -19,8 +21,42 @@ public sealed class AxisController
     {
         get; private set;
     }
-    public static double Factor(string key) => key == "CH6" ? 1000 : 1;
-    public static string Unit(string key) => key == "CH6" ? "mK" : key.StartsWith("CH") ? "K" : "原值";
+    public double Factor(string key) => _factors[key];
+    public string Unit(string key) => key.StartsWith("CH", StringComparison.Ordinal) ? (Factor(key) == 1000 ? "mK" : "K") : "原值";
+    public void ResetUnitHistory() => _unitInitialized.Clear();
+
+    /// <summary>Choose from visible samples in K; rescale limits to preserve physical bounds and manual modes.</summary>
+    public bool UpdateUnits(WindowData? data, IEnumerable<string> visible)
+    {
+        if (data == null || data.Left > Left || data.Right < Right)
+            return false;
+        bool changed = false;
+        foreach (string key in visible)
+        {
+            if (!key.StartsWith("CH", StringComparison.Ordinal))
+                continue;
+            double? peak = null;
+            foreach (var point in data.Series[key].Points)
+                if (point.T >= Left && point.T <= Right && double.IsFinite(point.V))
+                    peak = Math.Max(peak ?? 0, Math.Abs(point.V));
+            if (peak == null)
+                continue; // Gaps do not change the last meaningful unit.
+            double previous = Factor(key);
+            bool initialized = _unitInitialized.Contains(key);
+            double next = !initialized ? (peak < 1 ? 1000 : 1)
+                : previous == 1000 ? (peak >= 1 ? 1 : 1000)
+                : peak < .9 ? 1000 : 1;
+            _unitInitialized.Add(key);
+            if (previous == next)
+                continue;
+            var axis = _axes[key];
+            _plot.Axes.SetLimitsY(axis.Min * next / previous, axis.Max * next / previous, axis);
+            _factors[key] = next;
+            axis.LabelStyle.Text = key + " · " + Unit(key);
+            changed = true;
+        }
+        return changed;
+    }
     public AxisController(ScottPlot.Plot plot, bool dark)
     {
         _plot = plot;

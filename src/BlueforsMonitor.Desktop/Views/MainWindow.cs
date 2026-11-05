@@ -45,7 +45,7 @@ public sealed partial class MainWindow : Window
     string? _dragChannel;
     bool _dragging;
     Point _dragPoint;
-    double _dragLeft, _dragRight, _dragMin, _dragMax;
+    double _dragLeft, _dragRight, _dragMin, _dragMax, _dragFactor;
     public Task? LastLoad
     {
         get; private set;
@@ -271,7 +271,8 @@ public sealed partial class MainWindow : Window
             if (result == null)
                 return;
             var drawTimer = Stopwatch.StartNew();
-            if (result.Changed)
+            bool unitsChanged = _axisController.UpdateUnits(result.Data, _channels.VisibleChannels);
+            if (result.Changed || unitsChanged)
                 Draw();
             if (_arrangePending)
             {
@@ -289,9 +290,11 @@ public sealed partial class MainWindow : Window
     {
         if (_session.Data is null)
             return;
+        _axisController.UpdateUnits(_session.Data, _channels.VisibleChannels);
+        _cursorRendered = double.NaN;
         SyncAxes();
         _shade = PlotController.Render(_plot.Plot, _session.Data, _axisController.Axes,
-            _channels.VisibleChannels.ToHashSet(), ChannelColor, _dark);
+            _channels.VisibleChannels.ToHashSet(), ChannelColor, _axisController.Factor, _dark);
         UpdateSelection();
         _plot.Refresh();
     }
@@ -365,6 +368,7 @@ public sealed partial class MainWindow : Window
         if (key != null)
         {
             _channels.SelectedAxis = key;
+            _dragFactor = _axisController.Factor(key);
             _dragMin = _axisController.Axes[key].Min;
             _dragMax = _axisController.Axes[key].Max;
         }
@@ -381,7 +385,8 @@ public sealed partial class MainWindow : Window
         {
             if (_dragChannel is string key)
             {
-                _axisController.Pan(key, _dragMin, _dragMax, (point.Y - _dragPoint.Y) / rect.Height);
+                double scale = _axisController.Factor(key) / _dragFactor;
+                _axisController.Pan(key, _dragMin * scale, _dragMax * scale, (point.Y - _dragPoint.Y) / rect.Height);
                 UpdateModes();
                 _plot.Refresh();
             }
@@ -481,7 +486,7 @@ public sealed partial class MainWindow : Window
             foreach (var key in DataStore.Keys)
             {
                 var sample = DataStore.Nearest(samples.GetValueOrDefault(key, []), time);
-                string text = !_channels.IsChannelVisible(key) ? "已隐藏" : sample == null ? "无记录" : (sample.V * AxisController.Factor(key)).ToString(key == "CH6" ? "F3" : "G6", CultureInfo.InvariantCulture) + " " + AxisController.Unit(key);
+                string text = !_channels.IsChannelVisible(key) ? "已隐藏" : sample == null ? "无记录" : (sample.V * _axisController.Factor(key)).ToString(_axisController.Unit(key) == "mK" ? "F3" : "G6", CultureInfo.InvariantCulture) + " " + _axisController.Unit(key);
                 string tooltip = sample == null ? "光标前后 90 秒内没有原始记录" : $"原始样本 {Clock.At(sample.T):yyyy-MM-dd HH:mm:ss} · 与光标相差 {sample.T - time:+0.0;-0.0;0} 秒";
                 _channels.SetReadout(key, text, tooltip);
             }

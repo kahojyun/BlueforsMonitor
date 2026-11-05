@@ -117,6 +117,7 @@ public sealed partial class MainWindow
     {
         var store = _session.Store;
         _loadTimer.Stop();
+        _axisController.ResetUnitHistory();
         _selected = null;
         _arrangePending = true;
         _cursorRendered = double.NaN;
