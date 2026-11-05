@@ -28,7 +28,7 @@ Desktop 的 MonitorViewModel 通过属性通知提供状态、来源及事件数
 
 ## 监测会话
 
-`MonitoringSession` 位于 Core，不依赖 Avalonia、ScottPlot 或设置单例。构造时传入初始 DataStore 和缓存目录；拥有当前 Store、显示缓存、revision、光标桶缓存、日志导入器及取消源。`OpenAsync` 成功后才替换数据源，失败时保留原源；`RefreshAsync` 串行化扫描，报告变化及脏区间；`LoadAsync` 返回当前显示结果与是否重新读取；`ReadCursorAsync` 提供原始样本，仍由界面格式化读数。
+`MonitoringSession` 位于 Core，不依赖 Avalonia、ScottPlot 或设置单例。构造时传入初始 DataStore 和缓存目录；拥有当前 Store、显示缓存、revision、光标桶缓存、日志导入器及取消源。`OpenAsync` 成功后才替换数据源，失败时保留原源；`RefreshAsync` 串行化扫描，报告变化及脏区间；`LoadAsync` 返回当前显示结果与是否重新读取；`ReadCursorAsync` 提供原始样本，仍由界面格式化读数。新的视野请求即使命中缓存，也会取消之前的在途查询，防止晚到的旧视野覆盖缓存。
 
 会话由单一拥有者上下文调用（桌面中为 UI 线程），I/O 在后台执行；它不是可从任意线程同时调用的服务。结果返回前检查取消、会话代次、源对象及 revision。过期结果与过期异常返回 null，当前错误交给界面展示；关闭窗口时 Dispose 取消工作，并阻止迟到的光标查询更新缓存。空日志目录保持监测，之后可接收新日志。
 

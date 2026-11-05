@@ -113,16 +113,17 @@ public sealed class MonitoringSession : IDisposable
     {
         if (_closed || !Store.HasData)
             return null;
-        var store = Store;
-        long revision = store.Revision, generation = _generation;
-        double span = right - left;
-        if (!force && _dataRevision == revision && Data != null && Data.Left <= left && Data.Right >= right && Data.Resolution == DataStore.ResolutionFor(span))
-            return new(Data, false);
+        // Even a cache hit supersedes an in-flight request for a different view.
         _loadCancel?.Cancel();
         var cancellation = new CancellationTokenSource();
         _loadCancel = cancellation;
+        var store = Store;
+        long revision = store.Revision, generation = _generation;
         try
         {
+            double span = right - left;
+            if (!force && _dataRevision == revision && Data != null && Data.Left <= left && Data.Right >= right && Data.Resolution == DataStore.ResolutionFor(span))
+                return new(Data, false);
             var data = await _read(store, left - span * .2, right + span * .2, span, cancellation.Token);
             if (cancellation.IsCancellationRequested || !Current(store, generation) || revision != store.Revision)
                 return null;

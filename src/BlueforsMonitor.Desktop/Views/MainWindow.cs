@@ -278,11 +278,10 @@ public sealed partial class MainWindow : Window
                 Arrange();
                 _arrangePending = false;
             }
-            if (!result.Changed)
-                return;
             var data = result.Data;
             _viewModel.Status = $"{data.Count:N0} 个绘图点 · {(data.Resolution == 0 ? "原始样本" : $"{data.Resolution / 60} 分钟极值概览")} · 读取 {data.Milliseconds:F0} ms / 准备绘图 {drawTimer.Elapsed.TotalMilliseconds:F0} ms · 光标查原始记录 · 共 {_session.Store.Snapshot.Counts.Values.Sum():N0} 条";
-            _cursorRendered = double.NaN;
+            if (result.Changed)
+                _cursorRendered = double.NaN;
         }
         catch (Exception ex) { _viewModel.Status = "读取失败：" + ex.Message; Console.Error.WriteLine(ex); }
     }

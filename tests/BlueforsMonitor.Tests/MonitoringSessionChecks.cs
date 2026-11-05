@@ -33,11 +33,14 @@ static class MonitoringSessionChecks
         Verification.Check((await latest)?.Changed == true, "Latest query accepted");
         reads[0].Completion.SetException(new IOException("obsolete failure"));
         Verification.Check(await old == null && ReferenceEquals(session.Data, current) && reads[0].Token.IsCancellationRequested, "Old failure cannot replace current data or escape cancellation");
+        var pending = session.LoadAsync(5000, 6000);
         var cached = await session.LoadAsync(2100, 2900);
-        Verification.Check(cached?.Changed == false && reads.Count == 2, "Covered view reuses cache");
+        Verification.Check(cached?.Changed == false && reads.Count == 3, "Covered view reuses cache");
+        reads[2].Completion.SetResult(Data(4800, 6200));
+        Verification.Check(await pending == null && ReferenceEquals(session.Data, current), "Cache hit supersedes pending pan");
         var outdated = session.LoadAsync(2000, 3000, true);
         store.Revision++;
-        reads[2].Completion.SetResult(current);
+        reads[3].Completion.SetResult(current);
         Verification.Check(await outdated == null, "Revision change rejects display query");
         var cursor = session.ReadCursorAsync(100);
         Verification.Check(await session.ReadCursorAsync(101) == null, "Only one cursor query at a time");
@@ -53,7 +56,7 @@ static class MonitoringSessionChecks
         string logs = Path.Combine(scratch, "session-logs");
         Directory.CreateDirectory(logs);
         Verification.Check(await session.OpenAsync(logs) != null && session.IsMonitoring && session.Data == null, "Empty live directory opens and clears display cache");
-        reads[3].Completion.SetResult(Data(0, 1000));
+        reads[4].Completion.SetResult(Data(0, 1000));
         cursors[2].SetResult(Samples(3));
         Verification.Check(await oldSourceRead == null && await oldSourceCursor == null, "Source switch rejects display and cursor completions");
         var active = session.Store;
@@ -71,10 +74,10 @@ static class MonitoringSessionChecks
         var closingRead = session.LoadAsync(0, 1000, true);
         var closingCursor = session.ReadCursorAsync(100);
         session.Dispose();
-        reads[4].Completion.SetException(new IOException("closed display"));
+        reads[5].Completion.SetException(new IOException("closed display"));
         cursors[3].SetException(new IOException("closed cursor"));
         Verification.Check(await closingRead == null && await closingCursor == null, "Close suppresses late data and errors");
         Verification.Check(await session.LoadAsync(0, 1000) == null && await session.OpenAsync(logs) == null && await session.RefreshAsync(true) == null, "Disposed session does not restart work");
-        Console.WriteLine("PASS monitoring session: query ordering, revision/source isolation, cursor cache, empty live source, failed open, disposal");
+        Console.WriteLine("PASS monitoring session: query ordering, cache-hit cancellation, revision/source isolation, cursor cache, empty live source, failed open, disposal");
     }
 }
