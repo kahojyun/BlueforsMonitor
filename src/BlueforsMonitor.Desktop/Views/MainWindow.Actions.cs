@@ -19,11 +19,11 @@ public sealed partial class MainWindow
     {
         _dark = ActualThemeVariant != ThemeVariant.Light;
         var plot = _plot.Plot;
-        plot.FigureBackground.Color = ScottPlot.Color.FromHex(_dark ? "#101c2a" : "#ffffff");
+        plot.FigureBackground.Color = ScottPlot.Color.FromHex(UiTheme.Hex("Plot", _dark));
         plot.DataBackground.Color = plot.FigureBackground.Color;
-        plot.Axes.Color(ScottPlot.Color.FromHex(_dark ? "#91a5ba" : "#526a7d"));
-        plot.Grid.MajorLineColor = ScottPlot.Color.FromHex(_dark ? "#243446" : "#e3eaf0");
-        plot.Grid.MinorLineColor = ScottPlot.Color.FromHex(_dark ? "#182638" : "#f0f4f7");
+        plot.Axes.Color(ScottPlot.Color.FromHex(UiTheme.Hex("Axis", _dark)));
+        plot.Grid.MajorLineColor = ScottPlot.Color.FromHex(UiTheme.Hex("MajorGrid", _dark));
+        plot.Grid.MinorLineColor = ScottPlot.Color.FromHex(UiTheme.Hex("MinorGrid", _dark));
         foreach (var pair in _axes)
             pair.Value.Color(ScottPlot.Color.FromHex(ChannelColor(pair.Key)));
         _band.Dark = _dark;

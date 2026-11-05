@@ -26,16 +26,17 @@ public sealed partial class MainWindow : Window
     readonly CursorOverlay _overlay = new();
     readonly EventBand _band = new();
     readonly ListBox _events = new();
-    readonly TextBlock _status = Text("正在载入…", 11, "#97acc2");
-    readonly TextBlock _cursorLabel = Text("移动光标查看原始记录", 12, "#c0d0e0");
-    readonly TextBlock _eventDetail = Text("", 11, "#97acc2");
-    readonly TextBlock _rangeLabel = Text("", 11, "#97acc2");
+    readonly TextBlock _status = Text("正在载入…", 11, "SecondaryText");
+    readonly TextBlock _cursorLabel = Text("移动光标查看原始记录", 12, "CursorText");
+    readonly TextBlock _eventDetail = Text("", 11, "SecondaryText");
+    readonly TextBlock _rangeLabel = Text("", 11, "SecondaryText");
+    readonly TextBlock _dateError = Text("", 12, "Error");
     readonly DateTimeField _from = new();
     readonly DateTimeField _to = new();
     readonly ComboBox _theme = new() { ItemsSource = new[] { "深色", "浅色", "跟随系统" }, Width = 110 };
     readonly CheckBox _follow = new() { Content = "跟随最新", VerticalAlignment = VerticalAlignment.Center };
     readonly ComboBox _span = new() { ItemsSource = new[] { "1 小时", "6 小时", "24 小时", "7 天", "30 天" }, Width = 92 };
-    readonly TextBlock _sourceInfo = Text("", 11, "#849ab2");
+    readonly TextBlock _sourceInfo = Text("", 11, "SecondaryText");
     readonly TextBlock _eventCount = Text("", 14);
     readonly UniformGrid _cards = new() { Rows = 1 };
     readonly Dictionary<string, Border> _cardByKey = new();
@@ -74,7 +75,7 @@ public sealed partial class MainWindow : Window
         get; private set;
     }
 
-    static TextBlock Text(string text, double size = 12, string color = "#e0e9f3")
+    static TextBlock Text(string text, double size = 12, string color = "Text")
     {
         var label = new TextBlock { Text = text, FontSize = size, VerticalAlignment = VerticalAlignment.Center };
         UiTheme.Foreground(label, color);
@@ -104,9 +105,9 @@ public sealed partial class MainWindow : Window
         this.Bind(BackgroundProperty, this.GetResourceObservable("Page"));
         FontFamily = new FontFamily(UiTheme.Font);
         DataContext = _viewModel;
-        _status.Bind(TextBlock.TextProperty, new Avalonia.Data.Binding(nameof(MonitorViewModel.Status)));
-        _sourceInfo.Bind(TextBlock.TextProperty, new Avalonia.Data.Binding(nameof(MonitorViewModel.Source)));
-        _eventCount.Bind(TextBlock.TextProperty, new Avalonia.Data.Binding(nameof(MonitorViewModel.EventCount)));
+        _status.Bind(TextBlock.TextProperty, Avalonia.Data.CompiledBinding.Create((MonitorViewModel model) => model.Status));
+        _sourceInfo.Bind(TextBlock.TextProperty, Avalonia.Data.CompiledBinding.Create((MonitorViewModel model) => model.Source));
+        _eventCount.Bind(TextBlock.TextProperty, Avalonia.Data.CompiledBinding.Create((MonitorViewModel model) => model.EventCount));
         BuildUi();
         ConfigurePlot();
         ActualThemeVariantChanged += (_, _) => ApplyPalette();
@@ -137,10 +138,10 @@ public sealed partial class MainWindow : Window
         var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 15 };
         var title = new StackPanel { Spacing = 5 };
         var titleLine = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 14 };
-        var heading = Text("低温事件观察", 23, "#edf4fa");
+        var heading = Text("低温事件观察", 23, "Heading");
         heading.FontWeight = FontWeight.SemiBold;
         titleLine.Children.Add(heading);
-        titleLine.Children.Add(Text("BLUEFORS  /  0.4", 11, "#6c94b5"));
+        titleLine.Children.Add(Text("BLUEFORS  /  0.4", 11, "AccentText"));
         title.Children.Add(titleLine);
         _sourceInfo.TextTrimming = TextTrimming.CharacterEllipsis;
         title.Children.Add(_sourceInfo);
@@ -180,22 +181,34 @@ public sealed partial class MainWindow : Window
         toolbar.Children.Add(_span);
         toolbar.Children.Add(Button("全部历史", () => { if (_store.HasData) Navigate(_store.Snapshot.Bounds[0], _store.Snapshot.Bounds[1], true); }));
         toolbar.Children.Add(Button("刷新", () => _ = SyncCurrent(true)));
-        toolbar.Children.Add(_from);
-        toolbar.Children.Add(Text("—", 12, "#6d8299"));
-        toolbar.Children.Add(_to);
-        toolbar.Children.Add(Button("应用时间", ApplyDates));
         toolbar.Children.Add(Button("重新排列", () => Arrange()));
         var more = new Button { Content = "更多", Padding = new Thickness(12, 7) };
         var menu = CreateMenu();
         more.ContextMenu = menu;
         more.Click += (_, _) => menu.Open(more);
         toolbar.Children.Add(more);
-        Put(root, toolbar, 0, 1);
+        var dateRow = new WrapPanel { Orientation = Orientation.Horizontal };
+        var startGroup = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 0, 16, 4) };
+        startGroup.Children.Add(Text("开始"));
+        startGroup.Children.Add(_from);
+        var endGroup = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 0, 16, 4) };
+        endGroup.Children.Add(Text("结束"));
+        endGroup.Children.Add(_to);
+        dateRow.Children.Add(startGroup);
+        dateRow.Children.Add(endGroup);
+        dateRow.Children.Add(Button("应用时间", ApplyDates));
+        _dateError.IsVisible = false;
+        _dateError.TextWrapping = TextWrapping.Wrap;
+        var toolArea = new StackPanel { Spacing = 7 };
+        toolArea.Children.Add(toolbar);
+        toolArea.Children.Add(dateRow);
+        toolArea.Children.Add(_dateError);
+        Put(root, toolArea, 0, 1);
         var toggles = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 13 };
         foreach (string key in DataStore.Keys)
         {
             var check = new CheckBox { Content = key, IsChecked = _settings.VisibleChannels.Contains(key), FontSize = 11, MinHeight = 26 };
-            check.Bind(ForegroundProperty, check.GetResourceObservable(UiTheme.Channels[key].Dark));
+            check.Bind(ForegroundProperty, check.GetResourceObservable(UiTheme.ChannelResource(key)));
             _checks[key] = check;
             check.IsCheckedChanged += (_, _) =>
             {
@@ -215,11 +228,11 @@ public sealed partial class MainWindow : Window
             toggles.Children.Add(check);
             var content = new StackPanel { Spacing = 4 };
             var line = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
-            Put(line, Text(ChannelName(key), 11, UiTheme.Channels[key].Dark), 0);
-            _modes[key] = Text("自动", 10, "#768ea6");
+            Put(line, Text(ChannelName(key), 11, UiTheme.ChannelResource(key)), 0);
+            _modes[key] = Text("自动", 10, "SecondaryText");
             Put(line, _modes[key], 1);
             content.Children.Add(line);
-            var value = Text("—", 18, UiTheme.Channels[key].Dark);
+            var value = Text("—", 18, UiTheme.ChannelResource(key));
             value.FontWeight = FontWeight.Medium;
             _values[key] = value;
             content.Children.Add(value);
@@ -255,14 +268,14 @@ public sealed partial class MainWindow : Window
         Put(root, readout, 0, 6);
         var eventHeader = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), ColumnSpacing = 18 };
         Put(eventHeader, _eventCount, 0);
-        Put(eventHeader, Text("单击高亮 · 双击回看前后各 30 分钟", 11, "#849ab2"), 1);
+        Put(eventHeader, Text("单击高亮 · 双击回看前后各 30 分钟", 11, "SecondaryText"), 1);
         Put(eventHeader, _rangeLabel, 2);
         Put(root, eventHeader, 0, 7);
         var eventArea = new Grid { RowDefinitions = new RowDefinitions("26,*") };
         var columns = EventGrid();
         string[] labels = ["开始时间", "类型", "峰值 / mK", "升幅 / mK", "持续", "恢复时刻", "基线 / mK"];
         for (int i = 0; i < labels.Length; i++)
-            Put(columns, Text(labels[i], 11, "#8096ac"), i);
+            Put(columns, Text(labels[i], 11, "SecondaryText"), i);
         columns.Margin = new Thickness(14, 0, 14, 0);
         Put(eventArea, columns, 0, 0);
         _events.Bind(BackgroundProperty, _events.GetResourceObservable("Plot"));
@@ -274,11 +287,11 @@ public sealed partial class MainWindow : Window
             var row = EventGrid();
             row.Margin = new Thickness(5, 5);
             Put(row, Text(item.StartText), 0);
-            Put(row, Text(item.Kind, 12, item.Fast ? "#f5b868" : "#83bcea"), 1);
+            Put(row, Text(item.Kind, 12, item.Fast ? "EventFast" : "EventSlow"), 1);
             Put(row, Text(item.PeakText), 2);
             Put(row, Text(item.RiseText), 3);
             Put(row, Text(item.DurationText), 4);
-            Put(row, Text(item.Recovered ? Clock.At(item.End).ToString("MM-dd HH:mm") : "区间内未恢复", 11, item.Recovered ? "#8fada7" : "#bca582"), 5);
+            Put(row, Text(item.Recovered ? Clock.At(item.End).ToString("MM-dd HH:mm") : "区间内未恢复", 11, item.Recovered ? "Recovered" : "Pending"), 5);
             Put(row, Text((item.Baseline * 1000).ToString("F2")), 6);
             ToolTip.SetTip(row, item.Detail);
             return row;
@@ -291,7 +304,7 @@ public sealed partial class MainWindow : Window
         _eventDetail.TextWrapping = TextWrapping.Wrap;
         footer.Children.Add(_eventDetail);
         footer.Children.Add(_status);
-        footer.Children.Add(Text("图内拖动 / 滚轮：平移 / 缩放时间  ·  纵轴拖动 / 滚轮：仅调整该通道  ·  右键查看更多操作  ·  日志时间 UTC+08:00", 10, "#647d95"));
+        footer.Children.Add(Text("图内拖动 / 滚轮：平移 / 缩放时间  ·  纵轴拖动 / 滚轮：仅调整该通道  ·  右键查看更多操作  ·  日志时间 UTC+08:00", 10, "SecondaryText"));
         Put(root, footer, 0, 9);
     }
     static Grid EventGrid() => new() { ColumnDefinitions = new ColumnDefinitions("1.4*,1.15*,*,*,*,1.4*,*"), ColumnSpacing = 12, HorizontalAlignment = HorizontalAlignment.Stretch };
@@ -302,16 +315,16 @@ public sealed partial class MainWindow : Window
     {
         _plot.UserInputProcessor.Disable();
         var plot = _plot.Plot;
-        plot.FigureBackground.Color = SColor.FromHex("#101c2a");
-        plot.DataBackground.Color = SColor.FromHex("#101c2a");
+        plot.FigureBackground.Color = SColor.FromHex(UiTheme.Hex("Plot", _dark));
+        plot.DataBackground.Color = SColor.FromHex(UiTheme.Hex("Plot", _dark));
         plot.Font.Set(UiTheme.Font);
-        plot.Axes.Color(SColor.FromHex("#91a5ba"));
+        plot.Axes.Color(SColor.FromHex(UiTheme.Hex("Axis", _dark)));
         plot.Axes.Left.IsVisible = false;
         plot.Axes.Right.IsVisible = false;
         plot.Axes.Top.IsVisible = false;
         SetDateAxis(plot);
-        plot.Grid.MajorLineColor = SColor.FromHex("#243446");
-        plot.Grid.MinorLineColor = SColor.FromHex("#182638");
+        plot.Grid.MajorLineColor = SColor.FromHex(UiTheme.Hex("MajorGrid", _dark));
+        plot.Grid.MinorLineColor = SColor.FromHex(UiTheme.Hex("MinorGrid", _dark));
         plot.Grid.YAxis = plot.Axes.Left;
         plot.Axes.SetLimitsY(0, 1);
         for (int i = 0; i < DataStore.Keys.Length; i++)
@@ -336,18 +349,29 @@ public sealed partial class MainWindow : Window
     ScottPlot.IXAxis SetDateAxis(ScottPlot.Plot plot)
     {
         var axis = plot.Axes.DateTimeTicksBottom();
-        axis.Color(SColor.FromHex("#91a5ba"));
+        axis.Color(SColor.FromHex(UiTheme.Hex("Axis", _dark)));
         axis.TickGenerator = new ScottPlot.TickGenerators.DateTimeAutomatic { MaxTickCount = 8, LabelFormatter = d => (_right - _left) > 3 * 86400 ? d.ToString("MM-dd") : d.ToString("MM-dd\nHH:mm") };
         axis.TickLabelStyle.FontSize = 11;
         return axis;
     }
     void ApplyDates()
     {
-        if (_from.Value is not DateTime start || _to.Value is not DateTime end || end <= start)
+        string error;
+        if (!_from.TryGetValue(out var start, out error))
+            error = "开始时间：" + error;
+        else if (!_to.TryGetValue(out _, out error))
+            error = "结束时间：" + error;
+        else if (_to.Value <= start)
+            error = "结束时间须晚于开始时间。";
+        if (error.Length > 0)
         {
-            _viewModel.Status = "请选择有效的起止日期和时间，结束时间须晚于开始时间。";
+            _dateError.Text = error;
+            _dateError.IsVisible = true;
             return;
         }
+        _dateError.IsVisible = false;
+        _dateError.Text = "";
+        var end = _to.Value!.Value;
         Navigate(Clock.Unix(start), Clock.Unix(end), true);
     }
     void Navigate(double left, double right, bool arrange = false, bool stopFollow = true)
@@ -356,6 +380,8 @@ public sealed partial class MainWindow : Window
             StopFollowing();
         SetRange(left, right);
         _arrangePending |= arrange;
+        _dateError.IsVisible = false;
+        _dateError.Text = "";
         _from.Set(_left);
         _to.Set(_right);
         LastLoad = LoadVisible();
@@ -419,7 +445,7 @@ public sealed partial class MainWindow : Window
             return;
         SyncAxes();
         _shade = PlotController.Render(_plot.Plot, _data, _axes,
-            _checks.Where(p => p.Value.IsChecked == true).Select(p => p.Key).ToHashSet(), ChannelColor);
+            _checks.Where(p => p.Value.IsChecked == true).Select(p => p.Key).ToHashSet(), ChannelColor, _dark);
         UpdateSelection();
         _plot.Refresh();
     }
@@ -486,7 +512,9 @@ public sealed partial class MainWindow : Window
         SetRange(item.Start - 1800, item.End + 1800);
         if (_from.Value is null)
         {
-            _from.Set(_left);
+            _dateError.IsVisible = false;
+        _dateError.Text = "";
+        _from.Set(_left);
             _to.Set(_right);
         }
         LastLoad = LoadVisible();

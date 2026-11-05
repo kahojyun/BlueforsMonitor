@@ -23,54 +23,47 @@ public static class UiTheme
         ["P6"] = ("#df9f82", "#a75e3b")
     };
     public static string Channel(string key, bool dark) => dark ? Channels[key].Dark : Channels[key].Light;
+    public static readonly IReadOnlyDictionary<string, (string Dark, string Light)> Palette = new Dictionary<string, (string, string)>
+    {
+        ["Page"] = ("#0c1521", "#eef3f7"),
+        ["Surface"] = ("#142233", "#ffffff"),
+        ["Plot"] = ("#101c2a", "#ffffff"),
+        ["Border"] = ("#27394c", "#ced9e4"),
+        ["Text"] = ("#e0e9f3", "#203647"),
+        ["Heading"] = ("#edf4fa", "#172e40"),
+        ["SecondaryText"] = ("#97acc2", "#526a7d"),
+        ["CursorText"] = ("#c0d0e0", "#40596c"),
+        ["AccentText"] = ("#91c6e8", "#226e9c"),
+        ["EventFast"] = ("#f5b868", "#985500"),
+        ["EventSlow"] = ("#83bcea", "#226e9c"),
+        ["Recovered"] = ("#8fada7", "#38695d"),
+        ["Pending"] = ("#bca582", "#805c24"),
+        ["Error"] = ("#ffaaa6", "#b42318"),
+        ["Axis"] = ("#91a5ba", "#526a7d"),
+        ["MajorGrid"] = ("#243446", "#e3eaf0"),
+        ["MinorGrid"] = ("#182638", "#f0f4f7"),
+        ["Marker"] = ("#ffd700", "#956600"),
+        ["Selection"] = ("#ffffff", "#23465e"),
+        ["PeakMarker"] = ("#17202e", "#ffffff")
+    };
+    public static string Hex(string role, bool dark) => dark ? Palette[role].Dark : Palette[role].Light;
+    public static IBrush Paint(string role, bool dark) => Brush.Parse(Hex(role, dark));
+    public static string ChannelResource(string key) => "Channel." + key;
     public static void Install(Application app)
     {
         var dark = new ResourceDictionary();
         var light = new ResourceDictionary();
-        void Add(string key, string d, string l)
+        void Add(string key, (string Dark, string Light) colors)
         {
-            dark[key] = Brush.Parse(d);
-            light[key] = Brush.Parse(l);
+            dark[key] = Brush.Parse(colors.Dark);
+            light[key] = Brush.Parse(colors.Light);
         }
-        Add("Page", "#0c1521", "#eef3f7");
-        Add("Surface", "#142233", "#ffffff");
-        Add("Plot", "#101c2a", "#ffffff");
-        Add("Border", "#27394c", "#ced9e4");
-        foreach (var hex in new[] { "#97acc2", "#c0d0e0", "#6c94b5", "#91c6e8", "#849ab2", "#6d8299", "#768ea6", "#8096ac", "#647d95", "#8fada7", "#bca582" })
-            Add(hex, hex, "#526a7d");
-        Add("#e0e9f3", "#e0e9f3", "#203647");
-        Add("#edf4fa", "#edf4fa", "#172e40");
-        Add("#83bcea", "#83bcea", "#226e9c");
-        foreach (var pair in Channels.Values)
-            Add(pair.Dark, pair.Dark, pair.Light);
+        foreach (var pair in Palette)
+            Add(pair.Key, pair.Value);
+        foreach (var pair in Channels)
+            Add(ChannelResource(pair.Key), pair.Value);
         app.Resources.ThemeDictionaries[ThemeVariant.Dark] = dark;
         app.Resources.ThemeDictionaries[ThemeVariant.Light] = light;
     }
     public static void Foreground(TextBlock control, string resource) => control.Bind(TextBlock.ForegroundProperty, control.GetResourceObservable(resource));
-}
-
-public sealed class DateTimeField : StackPanel
-{
-    public CalendarDatePicker Date { get; } = new() { Width = 142, SelectedDateFormat = CalendarDatePickerFormat.Custom, CustomDateFormatString = "yyyy-MM-dd", FirstDayOfWeek = DayOfWeek.Monday };
-    public TimePicker Time { get; } = new() { Width = 94, ClockIdentifier = "24HourClock", MinuteIncrement = 1 };
-    public DateTime? Value => Date.SelectedDate is DateTime day && Time.SelectedTime is TimeSpan time ? day.Date + time : null;
-    public DateTimeField()
-    {
-        // Fluent's internal button otherwise keeps its 242px minimum and clips both numbers.
-        Time.Resources["TimePickerThemeMinWidth"] = 94d;
-        Time.Resources["TimePickerThemeMaxWidth"] = 94d;
-        Time.MinHeight = 34;
-        Time.FontSize = 12;
-        Orientation = Avalonia.Layout.Orientation.Horizontal;
-        Spacing = 4;
-        Children.Add(Date);
-        Children.Add(Time);
-    }
-    public void Set(double unix)
-    {
-        var value = Clock.At(unix);
-        Date.SelectedDate = value.Date;
-        Date.DisplayDate = value.Date;
-        Time.SelectedTime = new TimeSpan(value.Hour, value.Minute, 0);
-    }
 }

@@ -5,11 +5,11 @@ public static class PlotController
 {
     public static ScottPlot.Plottables.HorizontalSpan Render(ScottPlot.Plot plot, WindowData data,
         IReadOnlyDictionary<string, ScottPlot.AxisPanels.RightAxis> axes, IReadOnlySet<string> visibleKeys,
-        Func<string, string> color)
+        Func<string, string> color, bool dark)
     {
         plot.Clear();
         var shade = plot.Add.HorizontalSpan(0, 0);
-        shade.FillColor = ScottPlot.Color.FromHex("#70b7ed").WithAlpha(.10);
+        shade.FillColor = ScottPlot.Color.FromHex(UiTheme.Hex("EventSlow", dark)).WithAlpha(.10);
         shade.LineWidth = 0;
         shade.EnableAutoscale = false;
         foreach (var key in DataStore.Keys)
