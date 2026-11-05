@@ -10,3 +10,6 @@ artifacts/
 *.log
 settings.json
 events.json
+
+# License names may contain .Sqlite or .DBus.
+!licenses/**
