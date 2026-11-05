@@ -30,7 +30,7 @@ public sealed class DataStore
     {
         Folder = folder;
         Snapshot = File.Exists(Path.Combine(folder, "events.json"))
-            ? JsonSerializer.Deserialize<Snapshot>(File.ReadAllText(Path.Combine(folder, "events.json")), new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!
+            ? JsonSerializer.Deserialize(File.ReadAllText(Path.Combine(folder, "events.json")), MonitorJsonContext.CaseInsensitive.Snapshot)!
             : new("", "Asia/Shanghai", "Bluefors Monitor 0.15 (C# port)", "", [0, 0], Keys.ToDictionary(k => k, _ => 0), []);
     }
     internal SqliteConnection Open(bool write = false)
@@ -243,7 +243,7 @@ public sealed class DataStore
     internal void SaveSnapshot()
     {
         var file = Path.Combine(Folder, "events.json");
-        File.WriteAllText(file + ".tmp", JsonSerializer.Serialize(Snapshot, new JsonSerializerOptions { WriteIndented = true }));
+        File.WriteAllText(file + ".tmp", JsonSerializer.Serialize(Snapshot, MonitorJsonContext.Default.Snapshot));
         File.Move(file + ".tmp", file, true);
     }
     internal Dictionary<string, Sample[]> ReadRange(double left, double right)

@@ -111,3 +111,7 @@ dotnet run --project tests/BlueforsMonitor.DesktopChecks -c Release
 - 重开目录时先显示已有缓存，再检查日志变化。首次建立索引仍需要读取日志、生成概览与事件，进度文字会区分这些阶段。
 - 新索引采用紧凑表结构；旧索引可运行一次 **更多 → 压缩本机索引**。压缩在后台执行，需要额外临时磁盘空间，不改动源日志。
 - 同步结束后尝试 checkpoint 并收缩 WAL；其他进程仍在读取时可能暂时保留，之后重试。不要手动删除 WAL。来源记录用于重复文件和截断恢复，因此索引仍可能大于旧 Python 版。
+
+## Native AOT 候选测试
+
+默认发布方式保持 JIT。独立的 **AOT comparison** 工作流提供同提交的 JIT/AOT 包、启动对照报告和绘图截图。用法、测量边界及兼容性检查见 [Native AOT 候选版](docs/native-aot.md)。

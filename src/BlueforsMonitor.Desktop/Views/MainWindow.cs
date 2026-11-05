@@ -81,6 +81,7 @@ public sealed partial class MainWindow : Window
         _scanTimer.Start();
         Opened += async (_, _) =>
         {
+            if (PackageCheck.DirectoryPath != null) return;
             UpdateMetadata();
             if (_settings.LogRoot is string root && Directory.Exists(root))
                 await OpenLogs(root);

@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def locked_packages():
     result = set()
-    locks = sorted(ROOT.glob('**/packages.lock.json'))
+    locks = sorted(ROOT.glob('**/packages*.lock.json'))
     if not locks:
         raise ValueError('No packages.lock.json files found')
     for path in locks:

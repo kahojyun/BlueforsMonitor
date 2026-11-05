@@ -42,8 +42,9 @@ def sha256(path):
     return digest.hexdigest()
 
 
-def archive_name(runtime, value=None):
-    return f"BlueforsMonitor-{value or version()}-{runtime}.zip"
+def archive_name(runtime, value=None, deployment="jit"):
+    suffix = "-aot" if deployment == "aot" else ""
+    return f"BlueforsMonitor-{value or version()}-{runtime}{suffix}.zip"
 
 
 def write_json(path, value):
@@ -69,7 +70,7 @@ def verify_checksums(directory, names):
         raise ValueError("Checksum mismatch or missing file")
 
 
-def validate_archive(path, runtime, expected_version):
+def validate_archive(path, runtime, expected_version, deployment="jit"):
     with zipfile.ZipFile(path) as archive:
         if archive.testzip() is not None:
             raise ValueError("Invalid ZIP")
@@ -83,7 +84,9 @@ def validate_archive(path, runtime, expected_version):
                 pe = struct.unpack_from("<I", data, 0x3C)[0]
                 if data[pe:pe + 4] != b"PE\0\0" or struct.unpack_from("<H", data, pe + 4)[0] != 0x8664 or struct.unpack_from("<H", data, pe + 92)[0] != 2:
                     raise ValueError("Expected a Windows x64 GUI executable")
-            for name in ("app/coreclr.dll", "app/hostfxr.dll", "app/e_sqlite3.dll", "app/libSkiaSharp.dll", "LICENSE", "THIRD_PARTY_NOTICES.md"):
+            required = ["app/e_sqlite3.dll", "app/libSkiaSharp.dll", "LICENSE", "THIRD_PARTY_NOTICES.md"]
+            if deployment == "jit": required += ["app/coreclr.dll", "app/hostfxr.dll"]
+            for name in required:
                 archive.getinfo(prefix + name)
             metadata = json.loads(archive.read(prefix + "BUILD-INFO.json"))
         else:
@@ -97,11 +100,17 @@ def validate_archive(path, runtime, expected_version):
                 raise ValueError("Expected an arm64 Mach-O executable")
             if not ((executable.external_attr >> 16) & 0o111):
                 raise ValueError("macOS executable permission was lost")
-            for name in ("MacOS/libcoreclr.dylib", "MacOS/libhostfxr.dylib", "Resources/LICENSE", "Resources/THIRD_PARTY_NOTICES.md"):
+            required = ["Resources/LICENSE", "Resources/THIRD_PARTY_NOTICES.md"]
+            if deployment == "jit": required += ["MacOS/libcoreclr.dylib", "MacOS/libhostfxr.dylib"]
+            for name in required:
                 archive.getinfo(prefix + name)
             metadata = json.loads(archive.read(prefix + "Resources/BUILD-INFO.json"))
         if metadata["version"] != expected_version or metadata["runtime"] != runtime:
             raise ValueError("Embedded build metadata does not match package")
+        if metadata.get("deployment", "jit") != deployment:
+            raise ValueError("Deployment mode does not match package")
+        if deployment == "aot" and any(Path(name).name in ("coreclr.dll", "libcoreclr.dylib", "BlueforsAvalonia.dll") for name in names):
+            raise ValueError("AOT package unexpectedly contains JIT runtime/entry assembly")
         return metadata
 
 
@@ -154,7 +163,7 @@ def smoke_mac_bundle(app):
                 process.wait()
 
 
-def build(runtime, output):
+def build(runtime, output, deployment="jit"):
     value = version()
     output = Path(output).resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -172,11 +181,19 @@ def build(runtime, output):
     with tempfile.TemporaryDirectory(prefix="bluefors-publish-") as scratch:
         scratch = Path(scratch)
         publish = scratch / "publish"
-        run(["dotnet", "publish", "src/BlueforsMonitor.Desktop", "-c", "Release", "-r", runtime,
-             "--self-contained", "true", "-p:RestoreLockedMode=true", "-p:UseSharedCompilation=false", "-o", str(publish)])
-        runtime_config = json.loads((publish / "BlueforsAvalonia.runtimeconfig.json").read_text(encoding="utf-8"))
+        publish_args = ["dotnet", "publish", "src/BlueforsMonitor.Desktop", "-c", "Release", "-r", runtime,
+             "--self-contained", "true", "-p:RestoreLockedMode=true", "-p:UseSharedCompilation=false", "-o", str(publish)]
+        if deployment == "aot":
+            publish_args += ["-p:PublishAot=true", "-p:ILLinkTreatWarningsAsErrors=true", "-p:IlcTreatWarningsAsErrors=true"]
+        run(publish_args)
+        for path in publish.iterdir():
+            if path.suffix == ".dSYM": shutil.rmtree(path)
+            elif path.suffix in (".pdb", ".dbg"): path.unlink()
+        config = publish / "BlueforsAvalonia.runtimeconfig.json"
+        runtime_config = json.loads(config.read_text(encoding="utf-8")) if config.exists() else {"runtimeOptions": {}}
         metadata = {
             "version": value, "commit": commit, "dirty": dirty, "runtime": runtime,
+            "deployment": deployment,
             "code_signing": "ad-hoc" if runtime == "osx-arm64" else "unsigned",
             "dotnet_sdk": sdk, "frameworks": runtime_config["runtimeOptions"].get("includedFrameworks", []),
             "python": platform.python_version(), "build_os": platform.platform(),
@@ -185,7 +202,7 @@ def build(runtime, output):
         }
         metadata_file = scratch / "BUILD-INFO.json"
         write_json(metadata_file, metadata)
-        archive = output / archive_name(runtime, value)
+        archive = output / archive_name(runtime, value, deployment)
         archive.unlink(missing_ok=True)
         if runtime == "win-x64":
             run([sys.executable, "scripts/package_windows.py", str(publish), str(archive), "--build-info", str(metadata_file)])
@@ -224,10 +241,10 @@ def build(runtime, output):
             run(["/usr/bin/ditto", "-x", "-k", str(archive), str(extracted)])
             verify_mac_bundle(extracted / app.name)
             smoke_mac_bundle(extracted / app.name)
-        validate_archive(archive, runtime, value)
-        write_json(output / f"build-info-{runtime}.json", metadata)
+        validate_archive(archive, runtime, value, deployment)
+        write_json(output / f"build-info-{runtime}-{deployment}.json", metadata)
         # Single-platform local builds have their own checksums; aggregation replaces these.
-        checksums(output, [p.name for p in output.glob(f"BlueforsMonitor-{value}-*.zip")])
+        checksums(output, [p.name for p in output.glob(f"BlueforsMonitor-{value}-*.zip")] + [p.name for p in output.glob("build-info-*.json")])
         print(archive)
 
 
@@ -301,6 +318,7 @@ def main():
     commands.add_parser("version")
     package = commands.add_parser("build")
     package.add_argument("--runtime", choices=RUNTIMES, required=True)
+    package.add_argument("--deployment", choices=("jit", "aot"), default="jit")
     package.add_argument("--output", type=Path, default=ROOT / "artifacts/release")
     for name in ("manifest", "validate", "draft"):
         item = commands.add_parser(name)
@@ -312,7 +330,7 @@ def main():
     if args.action == "version":
         print(version())
     elif args.action == "build":
-        build(args.runtime, args.output)
+        build(args.runtime, args.output, args.deployment)
     elif args.action == "manifest":
         manifest(args.directory, args.commit)
     elif args.action == "validate":

@@ -6,7 +6,9 @@
     <AnalysisLevel>latest</AnalysisLevel>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <RuntimeIdentifiers>osx-arm64;win-x64;linux-x64</RuntimeIdentifiers>
+    <NuGetLockFilePath Condition="'$(PublishAot)' == 'true'">packages.aot.lock.json</NuGetLockFilePath>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
     <Deterministic>true</Deterministic>
     <Version>$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)VERSION').Trim())</Version>
   </PropertyGroup>

@@ -26,7 +26,7 @@ public sealed class AppSettings
     {
         try
         {
-            var settings = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(Path.Combine(Root, "settings.json"))) ?? new();
+            var settings = JsonSerializer.Deserialize(File.ReadAllText(Path.Combine(Root, "settings.json")), MonitorJsonContext.Default.AppSettings) ?? new();
             settings.Layout ??= new();
             settings.Layout.Normalize();
             return settings;
@@ -37,7 +37,7 @@ public sealed class AppSettings
     {
         Directory.CreateDirectory(Root);
         string file = Path.Combine(Root, "settings.json");
-        File.WriteAllText(file + ".tmp", JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true }));
+        File.WriteAllText(file + ".tmp", JsonSerializer.Serialize(this, MonitorJsonContext.Default.AppSettings));
         File.Move(file + ".tmp", file, true);
     }
 }

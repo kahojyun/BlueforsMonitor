@@ -61,7 +61,7 @@ public static class BackendVerification
             while (r.Read())
                 Verification.Check(store.Snapshot.Counts[r.GetString(0)] == r.GetInt32(1), "Snapshot counts must match committed DB");
         }
-        File.WriteAllText(Path.Combine(store.Folder, "pending-refresh.json"), JsonSerializer.Serialize(new[] { (int)(start / 86400) }));
+        File.WriteAllText(Path.Combine(store.Folder, "pending-refresh.json"), JsonSerializer.Serialize(new[] { (int)(start / 86400) }, MonitorJsonContext.Default.Int32Array));
         version = store.Revision;
         importer.Sync(true);
         Verification.Check(store.Revision > version && !File.Exists(Path.Combine(store.Folder, "pending-refresh.json")), "Interrupted metadata refresh must be recoverable");

@@ -112,6 +112,12 @@ class ReleaseChecks(unittest.TestCase):
                 release.draft(self.directory, "owner/repo", COMMIT)
             run.assert_not_called()
 
+    def test_aot_mode_cannot_accept_jit_package(self):
+        for runtime in release.RUNTIMES:
+            with self.assertRaises(ValueError):
+                release.validate_archive(self.directory / release.archive_name(runtime), runtime, release.version(), "aot")
+        self.assertNotEqual(release.archive_name("win-x64"), release.archive_name("win-x64", deployment="aot"))
+
     def test_version_input_is_numeric_and_path_safe(self):
         for value in ("../other", "0.5", "v0.5.0", "0.05.0", "0.5.0\nextra"):
             (self.directory / "VERSION").write_text(value)

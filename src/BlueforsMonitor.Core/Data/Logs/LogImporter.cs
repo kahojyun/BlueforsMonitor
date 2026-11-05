@@ -130,7 +130,7 @@ public sealed class LogImporter
         // from the durable database rather than silently trusting stale JSON metadata.
         if (File.Exists(pending))
         {
-            var previous = JsonSerializer.Deserialize<int[]>(File.ReadAllText(pending)) ?? [];
+            var previous = JsonSerializer.Deserialize(File.ReadAllText(pending), MonitorJsonContext.Default.Int32Array) ?? [];
             dirtyDays.UnionWith(previous);
             if (previous.Length > 0)
             {
@@ -298,7 +298,7 @@ public sealed class LogImporter
                 invalid.ExecuteNonQuery();
             }
         if (dirtyDays.Count > 0)
-            File.WriteAllText(pending, JsonSerializer.Serialize(dirtyDays.Order().ToArray()));
+            File.WriteAllText(pending, JsonSerializer.Serialize(dirtyDays.Order().ToArray(), MonitorJsonContext.Default.Int32Array));
         tx.Commit();
         if (full)
             _lastFullScan = DateTime.UtcNow;
@@ -317,11 +317,38 @@ public sealed class LogImporter
                 if (built++ % 10 == 0)
                     progress?.Report($"正在生成历史概览 {built} / {dirtyDays.Count} 天…");
                 var raw = _store.ReadRange(day * 86400d, (day + 1) * 86400d - .001);
-                Dictionary<string, object> Level(int width) => raw.Where(kv => kv.Value.Length > 0).ToDictionary(kv => kv.Key, kv => { var r = DataStore.Reduce(kv.Value, width); return (object)new object[] { r.Points.Select(p => new[] { p.T, p.V }).ToArray(), r.Gaps.Order().ToArray() }; });
-                var levels = new Dictionary<string, object> { { "1800", Level(1800) }, { "21600", Level(21600) } };
                 using var bytes = new MemoryStream();
                 using (var zip = new ZLibStream(bytes, CompressionLevel.Fastest, true))
-                    JsonSerializer.Serialize(zip, levels);
+                using (var json = new Utf8JsonWriter(zip))
+                {
+                    // Keep the existing [points, gaps] payload schema exactly,
+                    // without reflection or object-typed polymorphic serialization.
+                    json.WriteStartObject();
+                    foreach (int width in new[] { 1800, 21600 })
+                    {
+                        json.WriteStartObject(width.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                        foreach (var (key, values) in raw.Where(kv => kv.Value.Length > 0))
+                        {
+                            var reduced = DataStore.Reduce(values, width);
+                            json.WriteStartArray(key);
+                            json.WriteStartArray();
+                            foreach (var point in reduced.Points)
+                            {
+                                json.WriteStartArray();
+                                json.WriteNumberValue(point.T);
+                                json.WriteNumberValue(point.V);
+                                json.WriteEndArray();
+                            }
+                            json.WriteEndArray();
+                            json.WriteStartArray();
+                            foreach (var gap in reduced.Gaps.Order()) json.WriteNumberValue(gap);
+                            json.WriteEndArray();
+                            json.WriteEndArray();
+                        }
+                        json.WriteEndObject();
+                    }
+                    json.WriteEndObject();
+                }
                 build.Parameters[0].Value = day;
                 build.Parameters[1].Value = bytes.ToArray();
                 build.ExecuteNonQuery();

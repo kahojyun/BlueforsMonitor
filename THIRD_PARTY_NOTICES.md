@@ -55,3 +55,15 @@ Bluefors Monitor 自身使用 MIT。依赖组件及其包含的第三方代码�
 更新 NuGet 版本或发布运行时版本后，需要按新的依赖图核对并更新此清单及原文，不能假设本清单自动涵盖未来版本。包清单与原文 SHA-256 记录见 `licenses/inventory.json`。
 
 官方来源：Avalonia 12.1.5 licence.md；Avalonia.BuildServices 提交 777f975b0a0cecf0311273711d56697212c558c0；MicroCom master LICENSE；Tmds.DBus 提交 b4a7fed0b878f74cb54f7cca84d2889af4e596ba COPYING；SQLitePCL.raw v2.1.11 LICENSE.TXT；EF Core v10.0.14 LICENSE.txt。其余原文直接保留自相应版本 NuGet 包。
+
+## Native AOT 编译工具与静态运行时
+
+独立 AOT 候选构建使用以下锁定包；默认 JIT 发布方式不变。许可证原文及第三方通知随两种发布包保留。
+
+| 包 | 版本 | 许可 | 原文 |
+|---|---|---|---|
+| [Microsoft.DotNet.ILCompiler](https://www.nuget.org/packages/Microsoft.DotNet.ILCompiler/10.0.14) | 10.0.14 | MIT | [LICENSE.TXT](licenses/.NET/osx-arm64/10.0.14/LICENSE.TXT), [THIRD-PARTY-NOTICES.TXT](licenses/Microsoft.DotNet.ILCompiler/10.0.14/THIRD-PARTY-NOTICES.TXT) |
+| [Microsoft.NET.ILLink.Tasks](https://www.nuget.org/packages/Microsoft.NET.ILLink.Tasks/10.0.14) | 10.0.14 | MIT | [LICENSE.TXT](licenses/.NET/osx-arm64/10.0.14/LICENSE.TXT), [THIRD-PARTY-NOTICES.TXT](licenses/Microsoft.NET.ILLink.Tasks/10.0.14/THIRD-PARTY-NOTICES.TXT) |
+| [runtime.linux-x64.Microsoft.DotNet.ILCompiler](https://www.nuget.org/packages/runtime.linux-x64.Microsoft.DotNet.ILCompiler/10.0.14) | 10.0.14 | MIT | [LICENSE.TXT](licenses/.NET/osx-arm64/10.0.14/LICENSE.TXT), [THIRD-PARTY-NOTICES.TXT](licenses/runtime.linux-x64.Microsoft.DotNet.ILCompiler/10.0.14/THIRD-PARTY-NOTICES.TXT) |
+| [runtime.osx-arm64.Microsoft.DotNet.ILCompiler](https://www.nuget.org/packages/runtime.osx-arm64.Microsoft.DotNet.ILCompiler/10.0.14) | 10.0.14 | MIT | [LICENSE.TXT](licenses/.NET/osx-arm64/10.0.14/LICENSE.TXT), [THIRD-PARTY-NOTICES.TXT](licenses/runtime.osx-arm64.Microsoft.DotNet.ILCompiler/10.0.14/THIRD-PARTY-NOTICES.TXT) |
+| [runtime.win-x64.Microsoft.DotNet.ILCompiler](https://www.nuget.org/packages/runtime.win-x64.Microsoft.DotNet.ILCompiler/10.0.14) | 10.0.14 | MIT | [LICENSE.TXT](licenses/.NET/osx-arm64/10.0.14/LICENSE.TXT), [THIRD-PARTY-NOTICES.TXT](licenses/runtime.win-x64.Microsoft.DotNet.ILCompiler/10.0.14/THIRD-PARTY-NOTICES.TXT) |

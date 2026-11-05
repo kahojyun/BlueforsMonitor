@@ -26,7 +26,12 @@ public class App : Application
     public override void OnFrameworkInitializationCompleted()
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
-            desktop.MainWindow = new MainWindow(new DataStore(Path.Combine(AppSettings.Root, "empty")));
+        {
+            var window = new MainWindow(new DataStore(Path.Combine(AppSettings.Root, "empty")));
+            desktop.MainWindow = window;
+            if (PackageCheck.DirectoryPath != null)
+                window.Opened += async (_, _) => await PackageCheck.Run(window, desktop);
+        }
         base.OnFrameworkInitializationCompleted();
     }
 }
