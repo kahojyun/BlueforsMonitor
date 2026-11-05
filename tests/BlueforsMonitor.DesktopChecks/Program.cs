@@ -2,6 +2,7 @@ using System.Reflection;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Controls.Primitives;
 using Avalonia.Interactivity;
 using Avalonia.Input;
 using Avalonia.Media;
@@ -33,7 +34,7 @@ public sealed class CheckApp : App
             try
             {
                 await Check(window);
-                Console.WriteLine("PASS desktop: independent controls, bindings, themes, date validation and layout, logs, calendar, axes, events, follow");
+                Console.WriteLine("PASS desktop: TableView columns, resize alignment and header isolation, independent controls, bindings, themes, date validation and layout, logs, calendar, axes, events, follow");
             }
             catch (Exception error) { Console.Error.WriteLine(error); result = 1; }
             finally { lifetime.Shutdown(result); }
@@ -200,20 +201,40 @@ public sealed class CheckApp : App
         int selectionRequests = 0, replayRequests = 0;
         eventList.SelectionRequested += _ => selectionRequests++;
         eventList.ReplayRequested += _ => replayRequests++;
-        var rows = eventList.GetVisualDescendants().OfType<ListBox>().Single();
+        var rows = eventList.GetVisualDescendants().OfType<TableView>().Single();
         rows.SelectedItem = store.Snapshot.Events[0];
         Require(selectionRequests == 1 && replayRequests == 0 && ReferenceEquals(Field<EventRecord>(w, "_selected"), rows.SelectedItem), "Selection must reach window exactly once");
         Require(Field<double>(w, "_left") == start, "Selection must not jump");
         var pointer = new Avalonia.Input.Pointer(1, PointerType.Mouse, true);
         var pointerArgs = new PointerEventArgs(InputElement.PointerReleasedEvent, rows, pointer, w, default, 0, new PointerPointProperties(), KeyModifiers.None);
-        rows.RaiseEvent(new TappedEventArgs(InputElement.DoubleTappedEvent, pointerArgs));
+        Require(rows.Columns.Count == 7 && rows.CanUserResizeColumns, "Seven resizable TableView columns");
+        var header = rows.GetVisualDescendants().OfType<TableViewColumnHeader>().First(h => h.Column == rows.Columns[0]);
+        var grip = header.GetVisualDescendants().OfType<Thumb>().Single();
+        double originalWidth = rows.Columns[0].ActualWidth;
+        grip.RaiseEvent(new VectorEventArgs { RoutedEvent = Thumb.DragDeltaEvent, Vector = new Vector(48, 0) });
+        await Task.Delay(100);
+        Require(rows.Columns[0].Width.IsAbsolute && Math.Abs(rows.Columns[0].ActualWidth - originalWidth - 48) < 1, "Dragging the header grip must resize the column");
+        foreach (var cell in rows.GetVisualDescendants().OfType<TableViewCell>())
+        {
+            var matchingHeader = rows.GetVisualDescendants().OfType<TableViewColumnHeader>().Single(h => h.Column == cell.Column);
+            Require(Math.Abs(cell.Bounds.Width - matchingHeader.Bounds.Width) < 1 &&
+                Math.Abs(cell.TranslatePoint(default, rows)!.Value.X - matchingHeader.TranslatePoint(default, rows)!.Value.X) < 1, "Headers and cells must stay aligned after resizing");
+        }
+        header.RaiseEvent(new TappedEventArgs(InputElement.DoubleTappedEvent, pointerArgs));
+        grip.RaiseEvent(new TappedEventArgs(InputElement.DoubleTappedEvent, pointerArgs));
+        Require(replayRequests == 0 && Field<double>(w, "_left") == start, "Header and grip double taps must not replay an event");
+        var eventRow = rows.GetVisualDescendants().OfType<TableViewRow>().First();
+        Require(Equals(ToolTip.GetTip(eventRow), store.Snapshot.Events[0].Detail), "Row tooltip must retain event details");
+        eventRow.RaiseEvent(new TappedEventArgs(InputElement.DoubleTappedEvent, pointerArgs));
         if (w.LastLoad != null)
             await w.LastLoad;
         Require(selectionRequests == 1 && replayRequests == 1, "Replay must not recursively select");
         Require(from.Value == Clock.At(start), "Replay must preserve entered dates");
         double before = Field<double>(w, "_right");
         int requestsBeforeRefresh = selectionRequests;
+        double resizedWidth = rows.Columns[0].Width.Value;
         Call(w, "UpdateMetadata");
+        Require(rows.Columns[0].Width.Value == resizedWidth, "Refresh must retain resized widths");
         Require(eventList.SelectedEvent?.Start == store.Snapshot.Events[0].Start && selectionRequests == requestsBeforeRefresh, "Refresh must retain selection without user events");
         File.AppendAllText(file, "05-11-26,11:00:00,0.013\n");
         await (Task)Call(w, "SyncCurrent", true)!;

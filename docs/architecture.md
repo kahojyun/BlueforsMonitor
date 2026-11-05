@@ -16,6 +16,6 @@ Desktop 的 MonitorViewModel 通过属性通知提供状态、来源及事件数
 
 - `DateRangeControl`：拥有起止编辑器、区间校验和错误提示；`SetRange` 只更新输入，用户点击应用且校验通过后才发出 `RangeApplied`。
 - `ChannelPanelControl`：拥有通道勾选、读数卡片、自动/手动标记、选中纵轴与多纵轴选项。`Configure` 静默初始化；用户操作通过 `VisibilityChanged`、`AxisOptionsChanged` 通知主窗口；读数和手动状态由主窗口传入。
-- `EventListControl`：拥有表头、行模板、当前范围和事件详情。`SetEvents`、`Select` 用于静默同步数据及选择；用户选择、双击分别发出 `SelectionRequested`、`ReplayRequested`，避免程序同步反向触发回看。事件数量继续使用编译绑定。
+- `EventListControl`：内部使用 Avalonia 12.1 内置 TableView，拥有七列定义、单元格模板、当前范围和事件详情。列宽由 TableView 统一管理，支持拖动调整，无额外依赖。`SetEvents`、`Select` 用于静默同步数据及选择；用户选择、双击分别发出 `SelectionRequested`、`ReplayRequested`，避免程序同步反向触发回看。事件数量继续使用编译绑定。
 
 三个控件不持有 MainWindow、DataStore 实例、AppSettings 或绘图对象，也不启动后台任务。主窗口保存设置、加载数据、控制坐标轴，并将结果送入控件。`ViewElements` 仅复用文本、按钮与网格放置的小型构建方法。桌面回归从视觉树定位控件，使用公开接口与按钮/列表事件验证行为；数据源和绘图协调的测试暂仍使用反射访问主窗口。

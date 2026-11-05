@@ -4,6 +4,9 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.VisualTree;
+using Avalonia.Styling;
+using Avalonia.Data;
 using static BlueforsAvalonia.ViewElements;
 
 namespace BlueforsAvalonia;
@@ -12,8 +15,11 @@ namespace BlueforsAvalonia;
 public sealed class EventListControl : Grid
 {
     public static readonly StyledProperty<string> CountTextProperty = AvaloniaProperty.Register<EventListControl, string>(nameof(CountText), "升温事件 0");
-    public string CountText { get => GetValue(CountTextProperty); set => SetValue(CountTextProperty, value); }
-    readonly ListBox _events = new() { Name = "EventRows" };
+    public string CountText
+    {
+        get => GetValue(CountTextProperty); set => SetValue(CountTextProperty, value);
+    }
+    readonly TableView _events = new() { Name = "EventRows", CanUserResizeColumns = true };
     readonly TextBlock _eventCount = Text("", 14);
     readonly TextBlock _rangeLabel = Text("", 11, "SecondaryText");
     readonly TextBlock _detail = Text("点击事件查看同期 Still、流量和压力变化。", 11, "SecondaryText");
@@ -32,31 +38,20 @@ public sealed class EventListControl : Grid
         Put(eventHeader, Text("单击高亮 · 双击回看前后各 30 分钟", 11, "SecondaryText"), 1);
         Put(eventHeader, _rangeLabel, 2);
         Put(this, eventHeader, 0, 0);
-        var eventArea = new Grid { RowDefinitions = new RowDefinitions("26,*") };
-        var columns = EventGrid();
-        string[] labels = ["开始时间", "类型", "峰值 / mK", "升幅 / mK", "持续", "恢复时刻", "基线 / mK"];
-        for (int i = 0; i < labels.Length; i++)
-            Put(columns, Text(labels[i], 11, "SecondaryText"), i);
-        columns.Margin = new Thickness(14, 0, 14, 0);
-        Put(eventArea, columns, 0, 0);
         _events.Bind(TemplatedControl.BackgroundProperty, _events.GetResourceObservable("Plot"));
         _events.BorderThickness = new Thickness(0);
-        _events.ItemTemplate = new FuncDataTemplate<EventRecord>((item, _) =>
+        _events.Styles.Add(new Style(x => x.OfType<TableViewRow>())
         {
-            if (item == null)
-                return new TextBlock();
-            var row = EventGrid();
-            row.Margin = new Thickness(5, 5);
-            Put(row, Text(item.StartText), 0);
-            Put(row, Text(item.Kind, 12, item.Fast ? "EventFast" : "EventSlow"), 1);
-            Put(row, Text(item.PeakText), 2);
-            Put(row, Text(item.RiseText), 3);
-            Put(row, Text(item.DurationText), 4);
-            Put(row, Text(item.Recovered ? Clock.At(item.End).ToString("MM-dd HH:mm") : "区间内未恢复", 11, item.Recovered ? "Recovered" : "Pending"), 5);
-            Put(row, Text((item.Baseline * 1000).ToString("F2")), 6);
-            ToolTip.SetTip(row, item.Detail);
-            return row;
+            Setters = { new Setter(ToolTip.TipProperty, CompiledBinding.Create((EventRecord item) => item.Detail)) }
         });
+        AddColumn("开始时间", 1.4, item => item.StartText);
+        AddColumn("类型", 1.15, item => item.Kind, item => item.Fast ? "EventFast" : "EventSlow");
+        AddColumn("峰值 / mK", 1, item => item.PeakText);
+        AddColumn("升幅 / mK", 1, item => item.RiseText);
+        AddColumn("持续", 1, item => item.DurationText);
+        AddColumn("恢复时刻", 1.4, item => item.Recovered ? Clock.At(item.End).ToString("MM-dd HH:mm") : "区间内未恢复",
+            item => item.Recovered ? "Recovered" : "Pending");
+        AddColumn("基线 / mK", 1, item => (item.Baseline * 1000).ToString("F2"));
         _events.SelectionChanged += (_, _) =>
         {
             if (!_updating && _events.SelectedItem is EventRecord item)
@@ -65,13 +60,35 @@ public sealed class EventListControl : Grid
                 SelectionRequested?.Invoke(item);
             }
         };
-        _events.DoubleTapped += (_, _) => ReplaySelected();
-        Put(eventArea, _events, 0, 1);
-        Put(this, eventArea, 0, 1);
+        _events.DoubleTapped += (_, e) =>
+        {
+            // Headers and resize handles are inside TableView too; only rows request replay.
+            if (e.Source is Visual source &&
+                (source is TableViewRow || source.GetVisualAncestors().OfType<TableViewRow>().Any()))
+                ReplaySelected();
+        };
+        Put(this, _events, 0, 1);
         _detail.TextWrapping = TextWrapping.Wrap;
         Put(this, _detail, 0, 2);
     }
-    static Grid EventGrid() => new() { ColumnDefinitions = new ColumnDefinitions("1.4*,1.15*,*,*,*,1.4*,*"), ColumnSpacing = 12, HorizontalAlignment = HorizontalAlignment.Stretch };
+    void AddColumn(string header, double width, Func<EventRecord, string> text, Func<EventRecord, string>? color = null)
+    {
+        _events.Columns.Add(new TableViewColumn
+        {
+            Header = header,
+            Width = new GridLength(width, GridUnitType.Star),
+            HeaderTemplate = new FuncDataTemplate<string>((value, _) => Text(value ?? "", 11, "SecondaryText")),
+            CellTemplate = new FuncDataTemplate<EventRecord>((item, _) =>
+            {
+                if (item == null)
+                    return new TextBlock();
+                var label = Text(text(item), 12, color?.Invoke(item) ?? "Text");
+                label.TextTrimming = TextTrimming.CharacterEllipsis;
+                ToolTip.SetTip(label, item.Detail);
+                return label;
+            })
+        });
+    }
     public void ReplaySelected()
     {
         if (SelectedEvent is EventRecord item)
@@ -80,7 +97,10 @@ public sealed class EventListControl : Grid
     public void SetEvents(IEnumerable<EventRecord> events)
     {
         _updating = true;
-        try { _events.ItemsSource = events; }
+        try
+        {
+            _events.ItemsSource = events;
+        }
         finally { _updating = false; }
     }
     public void Select(EventRecord? item)
