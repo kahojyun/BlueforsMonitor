@@ -1,8 +1,8 @@
 using System.Globalization;
 
-namespace BlueforsAvalonia;
+namespace BlueforsMonitor;
 
-// Literal port of Bluefors Monitor 0.15 analysis_v2.py. Thresholds remain in kelvin.
+// Temperature event thresholds are in kelvin; detection behavior is regression-tested.
 public static class EventDetector
 {
     public static List<EventRecord> Detect(IReadOnlyList<Sample> points, CancellationToken token = default)

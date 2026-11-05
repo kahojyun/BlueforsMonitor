@@ -2,7 +2,7 @@ using System.Globalization;
 using Avalonia.Controls;
 using Avalonia.Layout;
 
-namespace BlueforsAvalonia;
+namespace BlueforsMonitor;
 
 public sealed class DateTimeField : StackPanel
 {

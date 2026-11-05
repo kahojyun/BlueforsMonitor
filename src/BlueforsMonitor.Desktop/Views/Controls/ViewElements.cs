@@ -5,7 +5,7 @@ using Avalonia.Controls.Templates;
 using Avalonia.Layout;
 using Avalonia.Media;
 
-namespace BlueforsAvalonia;
+namespace BlueforsMonitor;
 
 internal static class ViewElements
 {

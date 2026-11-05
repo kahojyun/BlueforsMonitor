@@ -1,4 +1,4 @@
-using BlueforsAvalonia;
+using BlueforsMonitor;
 string scratch = Path.Combine(Path.GetTempPath(), "bluefors-tests-" + Guid.NewGuid().ToString("N"));
 try
 {
@@ -16,42 +16,31 @@ try
     new AppSettings { Theme = "浅色", LogRoot = "example" }.Save();
     Verification.Check(AppSettings.Load().Theme == "浅色" && AppSettings.Load().LogRoot == "example", "Settings persistence");
     var settingsFile = Path.Combine(AppSettings.Root, "settings.json");
-    File.WriteAllText(settingsFile, "{\"Theme\":\"浅色\",\"Follow\":false}");
+    File.WriteAllText(settingsFile, "{\"Version\":1,\"Theme\":\"浅色\",\"Follow\":false}");
     var migrated = AppSettings.Load();
-    Verification.Check(!migrated.Follow && migrated.Theme == "浅色" && migrated.Layout.EventsExpanded && !migrated.Layout.FocusMode, "Old settings retain preferences and receive layout defaults");
+    Verification.Check(!migrated.Follow && migrated.Theme == "浅色" && migrated.Layout.EventsExpanded && !migrated.Layout.FocusMode, "Partial current settings retain preferences and receive layout defaults");
     migrated.Layout = new LayoutSettings { FocusMode = true, DatesExpanded = true, EventsExpanded = false, DetailsExpanded = false, EventPanelHeight = 230 };
     migrated.Save();
     var restored = AppSettings.Load().Layout;
     Verification.Check(restored.FocusMode && restored.DatesExpanded && !restored.EventsExpanded && !restored.DetailsExpanded && restored.EventPanelHeight == 230, "Layout persistence");
-    File.WriteAllText(settingsFile, "{\"Layout\":null}");
+    File.WriteAllText(settingsFile, "{\"Version\":1,\"Layout\":null}");
     Verification.Check(AppSettings.Load().Layout.EventPanelHeight == 150, "Null layout fallback");
-    File.WriteAllText(settingsFile, "{\"Layout\":{\"EventPanelHeight\":-10}}");
+    File.WriteAllText(settingsFile, "{\"Version\":1,\"Layout\":{\"EventPanelHeight\":-10}}");
     Verification.Check(AppSettings.Load().Layout.EventPanelHeight == 120, "Invalid panel height is clamped");
+    File.WriteAllText(settingsFile, "{\"Version\":999,\"Theme\":\"浅色\"}");
+    Verification.Check(AppSettings.Load().Theme == "跟随系统", "Unknown settings format falls back safely");
+    File.WriteAllText(settingsFile, "{\"Theme\":\"浅色\"}");
+    Verification.Check(AppSettings.Load().Theme == "跟随系统", "Unversioned preview settings are not imported");
     BackendVerification.Run(scratch);
     StorageChecks.Run(scratch);
-    JsonCompatibilityChecks.Run(scratch);
+    StorageFormatChecks.Run(scratch);
     await MonitoringSessionChecks.Run(scratch);
-    if (args.Length == 2 && args[0] == "--reference")
-    {
-        var reference = new DataStore(args[1]);
-        var events = EventDetector.Detect(reference.ReadChannel("CH6"));
-        Verification.Check(events.Count == reference.Snapshot.Events.Length, "Reference event count");
-        foreach (var pair in events.Zip(reference.Snapshot.Events))
-            Verification.Check(pair.First with
-            {
-                Detail = ""
-            } == pair.Second with
-            {
-                Detail = ""
-            }, "Reference event fields");
-        Console.WriteLine($"PASS {events.Count} reference events");
-    }
     Console.WriteLine("All regression checks passed.");
     return 0;
 }
 catch (Exception ex) { Console.Error.WriteLine(ex); return 1; }
 finally { Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools(); if (Directory.Exists(scratch)) Directory.Delete(scratch, true); }
-namespace BlueforsAvalonia
+namespace BlueforsMonitor
 {
     public static class Verification
     {

@@ -24,13 +24,13 @@ def fixture(logs):
                 stream.write(f"{date:%d-%m-%y,%H:%M:%S},{baseline + spike:.6f}\n")
 
 
-def compare(directory, runtime, output, repeats=3):
+def compare(directory, runtime, output, repeats=3, modes=("jit", "aot")):
     directory, output = Path(directory).resolve(), Path(output).resolve()
     output.mkdir(parents=True, exist_ok=True)
     logs = output / "logs"
     fixture(logs)
     executables, sizes = {}, {}
-    for mode in ("jit", "aot"):
+    for mode in modes:
         archive = directory / release.archive_name(runtime, deployment=mode)
         release.validate_archive(archive, runtime, release.version(), mode)
         extracted = output / mode
@@ -39,10 +39,10 @@ def compare(directory, runtime, output, repeats=3):
             subprocess.run(["ditto", "-x", "-k", str(archive), str(extracted)], check=True)
             app = extracted / "Bluefors Monitor.app"
             release.verify_mac_bundle(app)
-            executables[mode] = app / "Contents/MacOS/BlueforsAvalonia"
+            executables[mode] = app / "Contents/MacOS/BlueforsMonitor"
         else:
             with zipfile.ZipFile(archive) as zipped: zipped.extractall(extracted)
-            executables[mode] = extracted / "BlueforsMonitor/app/BlueforsAvalonia.exe"
+            executables[mode] = extracted / "BlueforsMonitor/app/BlueforsMonitor.exe"
         sizes[mode] = {"zip_bytes": archive.stat().st_size,
                        "unpacked_bytes": sum(p.stat().st_size for p in extracted.rglob("*") if p.is_file() and not p.is_symlink())}
     runs = []
@@ -51,7 +51,7 @@ def compare(directory, runtime, output, repeats=3):
     for iteration in range(-1, repeats + 1):
         if iteration <= 0 and (state / "settings/datasets").exists():
             shutil.rmtree(state / "settings/datasets")
-        for mode in (("jit", "aot") if iteration % 2 == 0 else ("aot", "jit")):
+        for mode in (modes if iteration % 2 == 0 else tuple(reversed(modes))):
             state.mkdir(exist_ok=True)
             (state / "report.json").unlink(missing_ok=True)
             (state / "error.txt").unlink(missing_ok=True)
@@ -78,5 +78,6 @@ if __name__ == "__main__":
     parser.add_argument("--directory", type=Path, required=True)
     parser.add_argument("--runtime", choices=release.RUNTIMES, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--deployment", choices=("jit", "aot"), help="Validate one deployment instead of comparing both")
     args = parser.parse_args()
-    compare(args.directory, args.runtime, args.output)
+    compare(args.directory, args.runtime, args.output, modes=(args.deployment,) if args.deployment else ("jit", "aot"))

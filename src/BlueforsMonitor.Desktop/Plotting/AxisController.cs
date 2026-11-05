@@ -1,7 +1,7 @@
 using System.Globalization;
 using SColor = ScottPlot.Color;
 
-namespace BlueforsAvalonia;
+namespace BlueforsMonitor;
 
 /// <summary>Owns plot axes, time limits and manual channel modes; no controls, settings or I/O.</summary>
 public sealed class AxisController

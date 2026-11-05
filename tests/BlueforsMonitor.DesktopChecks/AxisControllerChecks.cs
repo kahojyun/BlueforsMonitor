@@ -1,4 +1,4 @@
-using BlueforsAvalonia;
+using BlueforsMonitor;
 
 static class AxisControllerChecks
 {

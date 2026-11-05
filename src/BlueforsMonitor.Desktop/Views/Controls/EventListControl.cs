@@ -7,9 +7,9 @@ using Avalonia.Media;
 using Avalonia.VisualTree;
 using Avalonia.Styling;
 using Avalonia.Data;
-using static BlueforsAvalonia.ViewElements;
+using static BlueforsMonitor.ViewElements;
 
-namespace BlueforsAvalonia;
+namespace BlueforsMonitor;
 
 /// <summary>Event presentation and user intent, independent of the plot and data source.</summary>
 public sealed class EventListControl : Grid
@@ -53,7 +53,8 @@ public sealed class EventListControl : Grid
         _detailsToggle.IsChecked = true;
         _detailsToggle.IsCheckedChanged += (_, _) =>
         {
-            if (_updating) return;
+            if (_updating)
+                return;
             _detailsExpanded = _detailsToggle.IsChecked == true;
             UpdatePanels();
             DetailsExpandedChanged?.Invoke(_detailsExpanded);
@@ -106,7 +107,10 @@ public sealed class EventListControl : Grid
     {
         _detailsExpanded = value;
         _updating = true;
-        try { _detailsToggle.IsChecked = value; }
+        try
+        {
+            _detailsToggle.IsChecked = value;
+        }
         finally { _updating = false; }
         UpdatePanels();
     }

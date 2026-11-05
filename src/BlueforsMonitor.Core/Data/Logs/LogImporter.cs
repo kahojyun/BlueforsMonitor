@@ -6,7 +6,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 
-namespace BlueforsAvalonia;
+namespace BlueforsMonitor;
 
 public record LogSample(double T, string K, double V);
 public record SyncResult(int Added, int Changed, int Skipped, double DirtyFrom, double DirtyTo, int Files);
@@ -25,20 +25,28 @@ public sealed class LogImporter
             throw new DirectoryNotFoundException(normalized);
         if (OperatingSystem.IsWindows())
             normalized = normalized.ToUpperInvariant();
-        string folder = Path.Combine(cacheRoot, "datasets", Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(normalized)))[..20]);
+        string folder = Path.Combine(cacheRoot, "datasets", StorageFormat.DirectoryName, Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(normalized)))[..20]);
         Directory.CreateDirectory(folder);
         var store = new DataStore(folder) { LogRoot = Path.GetFullPath(root) };
         using var db = store.Open(true);
+        using var format = db.CreateCommand();
+        format.CommandText = "PRAGMA user_version";
+        int version = Convert.ToInt32(format.ExecuteScalar());
+        format.CommandText = "SELECT count(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'";
+        if (version != StorageFormat.Version && (version != 0 || Convert.ToInt32(format.ExecuteScalar()) != 0))
+            throw new InvalidDataException("索引数据库格式不受支持，请重新建立本机索引。");
         using var cmd = db.CreateCommand();
-        cmd.CommandText = """
+        cmd.CommandText = $"""
             PRAGMA journal_mode=WAL;
+            BEGIN;
             CREATE TABLE IF NOT EXISTS samples(t REAL,k TEXT,v REAL,PRIMARY KEY(t,k)) WITHOUT ROWID;
-            CREATE TABLE IF NOT EXISTS files(path TEXT PRIMARY KEY,pos INTEGER,mtime REAL);
             CREATE TABLE IF NOT EXISTS overview(day INTEGER PRIMARY KEY,payload BLOB);
             CREATE TABLE IF NOT EXISTS source_files(id INTEGER PRIMARY KEY,path TEXT UNIQUE,position INTEGER NOT NULL DEFAULT 0,size INTEGER NOT NULL DEFAULT 0,mtime INTEGER NOT NULL DEFAULT 0,head TEXT NOT NULL DEFAULT '');
             CREATE TABLE IF NOT EXISTS source_samples(file_id INTEGER,t REAL,k TEXT,v REAL,PRIMARY KEY(file_id,t,k)) WITHOUT ROWID;
             CREATE INDEX IF NOT EXISTS source_times ON source_samples(t,k);
             CREATE INDEX IF NOT EXISTS channel_times ON samples(k,t);
+            PRAGMA user_version={StorageFormat.Version};
+            COMMIT;
             """;
         cmd.ExecuteNonQuery();
         return store;
@@ -173,7 +181,6 @@ public sealed class LogImporter
         using var insert = Command("INSERT OR IGNORE INTO samples VALUES($t,$k,$v)", "$t", "$k", "$v");
         using var update = Command("UPDATE samples SET v=$v WHERE t=$t AND k=$k AND v<>$v", "$t", "$k", "$v");
         using var save = Command("UPDATE source_files SET position=$pos,size=$size,mtime=$mtime,head=$head WHERE id=$id", "$pos", "$size", "$mtime", "$head", "$id");
-        using var compatibility = Command("INSERT INTO files VALUES($path,$pos,$mtime) ON CONFLICT(path) DO UPDATE SET pos=excluded.pos,mtime=excluded.mtime", "$path", "$pos", "$mtime");
         void Dirty(double t)
         {
             dirtyFrom = Math.Min(dirtyFrom, t);
@@ -280,10 +287,6 @@ public sealed class LogImporter
                 save.Parameters[3].Value = Head(file, (int)Math.Min(128, length));
                 save.Parameters[4].Value = id;
                 save.ExecuteNonQuery();
-                compatibility.Parameters[0].Value = file;
-                compatibility.Parameters[1].Value = committed;
-                compatibility.Parameters[2].Value = new DateTimeOffset(info.LastWriteTimeUtc).ToUnixTimeMilliseconds() / 1000d;
-                compatibility.ExecuteNonQuery();
                 processed++;
                 if (processed % 30 == 0)
                     progress?.Report($"已索引 {processed:N0} 个日志文件 · 新增 {added:N0} 条");
@@ -304,7 +307,7 @@ public sealed class LogImporter
             _lastFullScan = DateTime.UtcNow;
         if (dirtyDays.Count > 0)
         {
-            // Rebuild only changed days; payload is compatible with the Python overview cache.
+            // Rebuild only changed days using the current overview payload format.
             using var build = db.CreateCommand();
             build.CommandText = "INSERT OR REPLACE INTO overview VALUES($d,$p)";
             build.Parameters.Add("$d", SqliteType.Integer);
@@ -341,7 +344,8 @@ public sealed class LogImporter
                             }
                             json.WriteEndArray();
                             json.WriteStartArray();
-                            foreach (var gap in reduced.Gaps.Order()) json.WriteNumberValue(gap);
+                            foreach (var gap in reduced.Gaps.Order())
+                                json.WriteNumberValue(gap);
                             json.WriteEndArray();
                             json.WriteEndArray();
                         }
@@ -377,7 +381,7 @@ public sealed class LogImporter
             }
             if (anchor != null)
                 events.AddRange(old.SkipWhile(e => e.Start != anchor.Start));
-            _store.Snapshot = new(_store.LogRoot!, "Asia/Shanghai", "Bluefors Monitor 0.15 (C# port)", "", range, counts, events.ToArray());
+            _store.Snapshot = new(StorageFormat.Version, _store.LogRoot!, "Asia/Shanghai", range, counts, events.ToArray());
             _store.SaveSnapshot();
             _store.Revision++;
             File.Delete(pending);

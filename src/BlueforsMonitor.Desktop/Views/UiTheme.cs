@@ -3,7 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Media;
 using Avalonia.Styling;
 
-namespace BlueforsAvalonia;
+namespace BlueforsMonitor;
 
 public static class UiTheme
 {

@@ -14,10 +14,10 @@ SPEC.loader.exec_module(release)
 COMMIT = "a" * 40
 
 
-def fixture(directory, runtime, *, commit=COMMIT, dirty=False, bundle_version=None, executable=True):
+def fixture(directory, runtime, *, commit=COMMIT, dirty=False, bundle_version=None, executable=True, deployment="aot"):
     value = release.version()
-    info = {"version": value, "runtime": runtime, "commit": commit, "dirty": dirty}
-    archive = directory / release.archive_name(runtime)
+    info = {"version": value, "runtime": runtime, "commit": commit, "dirty": dirty, "deployment": deployment}
+    archive = directory / release.archive_name(runtime, deployment=deployment)
     with zipfile.ZipFile(archive, "w") as z:
         if runtime == "win-x64":
             prefix = "BlueforsMonitor/"
@@ -26,19 +26,19 @@ def fixture(directory, runtime, *, commit=COMMIT, dirty=False, bundle_version=No
             pe[64:68] = b"PE\0\0"
             struct.pack_into("<H", pe, 68, 0x8664)
             struct.pack_into("<H", pe, 156, 2)
-            for name in ("BlueforsMonitor.exe", "app/BlueforsAvalonia.exe"):
+            for name in ("BlueforsMonitor.exe", "app/BlueforsMonitor.exe"):
                 z.writestr(prefix + name, pe)
-            for name in ("app/coreclr.dll", "app/hostfxr.dll", "app/e_sqlite3.dll", "app/libSkiaSharp.dll", "LICENSE", "THIRD_PARTY_NOTICES.md"):
+            for name in ("app/e_sqlite3.dll", "app/libSkiaSharp.dll", "LICENSE", "THIRD_PARTY_NOTICES.md"):
                 z.writestr(prefix + name, "fixture")
             z.writestr(prefix + "BUILD-INFO.json", json.dumps(info))
         else:
             prefix = "Bluefors Monitor.app/Contents/"
             bundle = bundle_version or value
-            z.writestr(prefix + "Info.plist", plistlib.dumps({"CFBundleShortVersionString": bundle, "CFBundleVersion": bundle}))
-            entry = zipfile.ZipInfo(prefix + "MacOS/BlueforsAvalonia")
+            z.writestr(prefix + "Info.plist", plistlib.dumps({"CFBundleShortVersionString": bundle, "CFBundleVersion": bundle, "CFBundleIdentifier": "io.github.kahojyun.blueforsmonitor", "CFBundleExecutable": "BlueforsMonitor", "CFBundleDisplayName": "Bluefors Monitor"}))
+            entry = zipfile.ZipInfo(prefix + "MacOS/BlueforsMonitor")
             entry.external_attr = (0o100755 if executable else 0o100644) << 16
             z.writestr(entry, b"\xcf\xfa\xed\xfe" + struct.pack("<I", 0x100000C))
-            for name in ("MacOS/libcoreclr.dylib", "MacOS/libhostfxr.dylib", "Resources/LICENSE", "Resources/THIRD_PARTY_NOTICES.md"):
+            for name in ("Resources/LICENSE", "Resources/THIRD_PARTY_NOTICES.md"):
                 z.writestr(prefix + name, "fixture")
             z.writestr(prefix + "Resources/BUILD-INFO.json", json.dumps(info))
     return archive
@@ -112,11 +112,13 @@ class ReleaseChecks(unittest.TestCase):
                 release.draft(self.directory, "owner/repo", COMMIT)
             run.assert_not_called()
 
-    def test_aot_mode_cannot_accept_jit_package(self):
+    def test_release_cannot_accept_jit_metadata(self):
         for runtime in release.RUNTIMES:
+            archive = fixture(self.directory, runtime, deployment="jit")
             with self.assertRaises(ValueError):
-                release.validate_archive(self.directory / release.archive_name(runtime), runtime, release.version(), "aot")
-        self.assertNotEqual(release.archive_name("win-x64"), release.archive_name("win-x64", deployment="aot"))
+                release.validate_archive(archive, runtime, release.version())
+        self.assertNotEqual(release.archive_name("win-x64"), release.archive_name("win-x64", deployment="jit"))
+        self.assertFalse(release.archive_name("win-x64").endswith("-aot.zip"))
 
     def test_version_input_is_numeric_and_path_safe(self):
         for value in ("../other", "0.5", "v0.5.0", "0.05.0", "0.5.0\nextra"):

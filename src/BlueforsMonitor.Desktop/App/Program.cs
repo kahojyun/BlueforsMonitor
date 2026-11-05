@@ -1,5 +1,5 @@
 using Avalonia;
-namespace BlueforsAvalonia;
+namespace BlueforsMonitor;
 
 internal static class Program
 {

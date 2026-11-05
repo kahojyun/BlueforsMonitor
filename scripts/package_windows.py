@@ -19,7 +19,7 @@ parser.add_argument("output", type=Path)
 parser.add_argument("--build-info", required=True, type=Path)
 args = parser.parse_args()
 publish, output = args.publish.resolve(), args.output.resolve()
-if not (publish / "BlueforsAvalonia.exe").is_file():
+if not (publish / "BlueforsMonitor.exe").is_file():
     raise SystemExit("Expected a self-contained win-x64 publish directory")
 output.parent.mkdir(parents=True, exist_ok=True)
 with tempfile.TemporaryDirectory(prefix="bluefors-package-") as scratch:
@@ -51,7 +51,8 @@ app 文件夹包含程序和 .NET 运行时，请完整保留，无需另外安�
 默认主题跟随系统，日志时间 UTC+08:00。
 R / 图内双击：重排；A / 纵轴双击：适配选中轴。
 自动轴只调整未手动缩放的通道，R 可恢复全部通道为自动。
-旧索引可通过“更多 → 压缩本机索引”压缩一次；需要临时磁盘空间。
+需要释放索引空闲空间时可使用“更多 → 压缩本机索引”。
+本版使用全新 BlueforsMonitor 设置目录；首次启动请选择 Logfiles 重新索引。
 不包含实验日志或预置数据库。源码：https://github.com/kahojyun/BlueforsMonitor
 """, encoding="utf-8-sig")
     with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as archive:

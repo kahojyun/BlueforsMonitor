@@ -1,16 +1,18 @@
-本草稿用于实机验收，尚未正式发布。工作流不会自动发布或覆盖已有版本。
+本草稿用于正式发布前的实机验收，尚未正式发布。
 
-本轮内容：序列化改为 AOT 兼容实现，保留旧设置、事件和概览格式；增加独立 Native AOT/JIT 对照构建及实际发布包功能、启动、内存和体积检查。默认 Release 继续采用 JIT。
+本轮内容：
+- 默认发布切换为 Native AOT；JIT 保留为开发与诊断对照。
+- 产品、程序集、可执行文件统一为 Bluefors Monitor / BlueforsMonitor；窗口去掉 Avalonia 后缀。
+- macOS bundle ID 固定为 io.github.kahojyun.blueforsmonitor。
+- 使用新的 BlueforsMonitor 设置目录及 v1 索引，删除预览版/Python 专用迁移与兼容写入。
+- 保留实时日志容错、概览恢复、索引压缩及现有绘图交互。
 
-下载对应平台的 ZIP 并完整解压：
-- Windows x64：双击根目录的 BlueforsMonitor.exe，保留 app 文件夹。
-- macOS Apple Silicon：打开 Bluefors Monitor.app。本包已进行 ad-hoc 签名，尚未进行 Developer ID 签名和公证。首次打开若被 Gatekeeper 拦截，请在“系统设置 → 隐私与安全性”中允许打开，再启动应用；ad-hoc 签名不等于通过 Gatekeeper 公证。
-- SHA256SUMS 提供文件校验，BUILD-INFO.json 记录源码提交、SDK、运行时和构建环境。
+升级说明：首次打开请重新选择原始 Logfiles 建立索引，并重新设置主题、通道和布局。旧 BlueforsMonitor.Avalonia 数据不会自动迁移或删除。不要把旧数据库复制进新目录，不要删除原始日志。
 
-正式发布前请确认：
-- 首次启动、旧设置/索引恢复、收起日期时首次出图。
-- 真实日志追加、暂停/跟随、退出重开。
-- 中文、mK/K、R/A、自动轴与手动缩放、PNG 导出。
-- Windows 移动解压目录后启动；macOS 解压后的应用启动。
+Windows 完整解压后运行根目录 BlueforsMonitor.exe；macOS 打开 Bluefors Monitor.app。macOS 包已 ad-hoc 签名，尚未进行 Developer ID 签名或公证，首次下载可能需在系统设置中允许打开。
 
-测试通过后，可手动决定发布为预发行版或正式版，并补充实机验证结果。若发现问题，保留本草稿，修改代码并递增 VERSION 后生成新的候选包。
+SHA256SUMS 提供下载校验，BUILD-INFO.json 记录源码提交、AOT 部署方式和构建环境。
+
+验收重点：首次重新索引与出图、退出重开、真实日志追加与暂停/跟随、事件表、中文、mK/K、R/A、日期、手动缩放与 PNG 导出；Windows 移动解压目录后启动。
+
+待实机验收后，由维护者手动决定正式发布。工作流只创建草稿，不覆盖已有版本。

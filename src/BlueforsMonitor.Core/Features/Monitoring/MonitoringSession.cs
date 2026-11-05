@@ -1,4 +1,4 @@
-namespace BlueforsAvalonia;
+namespace BlueforsMonitor;
 
 public sealed record DisplayResult(WindowData Data, bool Changed);
 public sealed record RefreshResult(SyncResult Changes, bool Changed);

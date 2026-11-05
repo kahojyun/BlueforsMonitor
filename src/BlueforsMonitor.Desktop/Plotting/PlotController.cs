@@ -1,5 +1,5 @@
 using System.Globalization;
-namespace BlueforsAvalonia;
+namespace BlueforsMonitor;
 
 public static class PlotController
 {

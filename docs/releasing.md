@@ -8,7 +8,7 @@
 
 1. 更新 `VERSION` 和 `docs/release-notes.md`，提交并推送到 main。
 2. 在 GitHub Actions 选择 **Draft release → Run workflow → main**。也支持推送与 VERSION 一致的 `vX.Y.Z` 标签。
-3. 工作流先在 Windows、macOS、Linux 构建和回归，再分别在 Windows x64、macOS arm64 runner 打包。
+3. 工作流先在 Windows、macOS、Linux 构建和回归，再分别在 Windows x64、macOS arm64 runner 编译 Native AOT、打包并运行包内应用检查。
 4. 校验两个包来自同一干净提交、版本和可执行文件架构正确，生成 `BUILD-INFO.json` 与 `SHA256SUMS`，最后创建 **Draft + Pre-release**。
 
 普通 CI 不创建 Release。发布工作流不包含正式发布步骤。草稿只对有权限的仓库成员可见；下载后按 Release 中的清单实机测试。通过后由维护者在 GitHub 手动发布，并根据成熟度决定是否保留 Pre-release 标记。
@@ -26,8 +26,8 @@ macOS/Linux 在下载目录运行 `shasum -a 256 -c SHA256SUMS`。Windows 可用
 
 ## 本地打包
 
-安装 `global.json` 指定的 SDK 和 Python 3，运行 `bash scripts/publish.sh osx-arm64` 或 Windows PowerShell 的 `./scripts/publish.ps1`。输出位于 `artifacts/release/`，文件名包含版本；包自带 .NET 运行时。
+安装 `global.json` 指定的 SDK 和 Python 3，运行 `bash scripts/publish.sh osx-arm64` 或 Windows PowerShell 的 `./scripts/publish.ps1`。输出位于 `artifacts/release/`，文件名包含版本；默认生成 Native AOT 包，无需安装 .NET。显式使用 `--deployment jit` 可生成带 `-jit` 后缀的诊断包。
 
-Windows 启动器需要 Zig，或已初始化的 VS x64 开发者环境中的 cl.exe。macOS bundle 必须在 macOS 上生成。脚本允许本地未提交构建并标记 dirty，但草稿流程拒绝这种包。发布校验测试：`python -m unittest discover -s tests/release -v`。
+Windows Native AOT 编译需要 VS x64 C++ 工具及 Windows SDK；根目录启动器使用 Zig 或 cl.exe。macOS bundle 必须在 macOS 上生成。脚本允许本地未提交构建并标记 dirty，但草稿流程拒绝这种包。发布校验测试：`python -m unittest discover -s tests/release -v`。
 
-macOS 打包会按内部 Mach-O 文件、外层 app 的顺序执行 ad-hoc 签名，再运行严格签名验证；生成 ZIP 后重新解压，再验证全部原生文件及 app 的签名，并启动解压后的程序运行 10 秒，检测启动时崩溃或运行库缺失。任一步失败都会阻止上传。此流程不启用 Hardened Runtime；未来采用 Developer ID/公证时需单独配置 .NET JIT 权限并验证。
+macOS 打包会按内部 Mach-O 文件、外层 app 的顺序执行 ad-hoc 签名，再运行严格签名验证；生成 ZIP 后重新解压，再验证全部原生文件及 app 的签名，并启动解压后的程序运行 10 秒，检测启动时崩溃或运行库缺失。任一步失败都会阻止上传。此流程不启用 Hardened Runtime；未来采用 Developer ID/公证时需验证 Hardened Runtime；JIT 包还需配置相应权限。

@@ -1,6 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
-using static BlueforsAvalonia.ViewElements;
+using static BlueforsMonitor.ViewElements;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
@@ -11,7 +11,7 @@ using System.Globalization;
 using System.Diagnostics;
 using SColor = ScottPlot.Color;
 
-namespace BlueforsAvalonia;
+namespace BlueforsMonitor;
 
 public sealed partial class MainWindow : Window
 {
@@ -56,7 +56,7 @@ public sealed partial class MainWindow : Window
     {
         _session = new MonitoringSession(store, AppSettings.Root);
         _axisController = new AxisController(_plot.Plot, _dark);
-        Title = $"Bluefors Monitor · Avalonia {AppVersion.Current}";
+        Title = $"Bluefors Monitor {AppVersion.Current}";
         Width = 1460;
         Height = 980;
         MinWidth = 1000;
@@ -81,7 +81,8 @@ public sealed partial class MainWindow : Window
         _scanTimer.Start();
         Opened += async (_, _) =>
         {
-            if (PackageCheck.DirectoryPath != null) return;
+            if (PackageCheck.DirectoryPath != null)
+                return;
             UpdateMetadata();
             if (_settings.LogRoot is string root && Directory.Exists(root))
                 await OpenLogs(root);

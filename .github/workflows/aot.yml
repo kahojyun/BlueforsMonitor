@@ -49,7 +49,7 @@ jobs:
             }
           }
       - name: Build JIT control package
-        run: python scripts/release.py build --runtime ${{ matrix.runtime }} --output artifacts/comparison
+        run: python scripts/release.py build --runtime ${{ matrix.runtime }} --deployment jit --output artifacts/comparison
       - name: Build Native AOT candidate (warnings are errors)
         run: python scripts/release.py build --runtime ${{ matrix.runtime }} --deployment aot --output artifacts/comparison
       - name: Exercise shipped binaries and compare startup

@@ -4,7 +4,7 @@ using Avalonia.Input;
 using Avalonia.Media;
 using System.Globalization;
 
-namespace BlueforsAvalonia;
+namespace BlueforsMonitor;
 
 public sealed class CursorOverlay : Control
 {

@@ -1,4 +1,4 @@
-namespace BlueforsAvalonia;
+namespace BlueforsMonitor;
 
 /// <summary>Horizontal channel/unit heading above the axis, including PNG exports.</summary>
 public sealed class HeaderRightAxis : ScottPlot.AxisPanels.RightAxis

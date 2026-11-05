@@ -5,7 +5,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <Product>Bluefors Monitor</Product>
-    <AssemblyName>BlueforsAvalonia</AssemblyName>
+    <AssemblyName>BlueforsMonitor</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Avalonia.Desktop" Version="12.1.5" />

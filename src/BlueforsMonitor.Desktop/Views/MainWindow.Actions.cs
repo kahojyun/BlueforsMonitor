@@ -3,7 +3,7 @@ using Avalonia.Platform.Storage;
 using Avalonia.Styling;
 using Avalonia.Threading;
 
-namespace BlueforsAvalonia;
+namespace BlueforsMonitor;
 
 public sealed partial class MainWindow
 {
@@ -96,7 +96,8 @@ public sealed partial class MainWindow
                 cachedShown = true;
                 var cachedStore = _session.Store;
                 await ShowOpenedSource(root);
-                if (_closed || !ReferenceEquals(cachedStore, _session.Store)) return;
+                if (_closed || !ReferenceEquals(cachedStore, _session.Store))
+                    return;
                 _viewModel.Status += " · 已显示缓存，后台检查日志…";
                 await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
             });
@@ -116,7 +117,8 @@ public sealed partial class MainWindow
                         LastLoad = LoadVisible(true);
                     if (LastLoad != null)
                         await LastLoad;
-                    if (_closed || !ReferenceEquals(store, _session.Store)) return;
+                    if (_closed || !ReferenceEquals(store, _session.Store))
+                        return;
                     ExpandAutomaticAxes();
                 }
                 else

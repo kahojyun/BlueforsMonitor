@@ -16,7 +16,7 @@ void WINAPI Start(void)
     if (!length) goto error;
     folder[length] = 0;
     lstrcpyW(application, folder);
-    lstrcatW(application, L"app\\BlueforsAvalonia.exe");
+    lstrcatW(application, L"app\\BlueforsMonitor.exe");
     startup.cb = sizeof(startup);
     if (!CreateProcessW(application, NULL, NULL, NULL, FALSE, 0, NULL, folder, &startup, &process)) goto error;
     CloseHandle(process.hThread);

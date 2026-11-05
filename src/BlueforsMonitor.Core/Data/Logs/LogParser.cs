@@ -1,6 +1,6 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
-namespace BlueforsAvalonia;
+namespace BlueforsMonitor;
 
 public sealed class LogParser
 {

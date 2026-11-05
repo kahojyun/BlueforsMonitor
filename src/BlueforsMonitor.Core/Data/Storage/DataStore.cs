@@ -2,7 +2,7 @@ using Microsoft.Data.Sqlite;
 using System.IO.Compression;
 using System.Text.Json;
 
-namespace BlueforsAvalonia;
+namespace BlueforsMonitor;
 
 public sealed class DataStore
 {
@@ -30,8 +30,10 @@ public sealed class DataStore
     {
         Folder = folder;
         Snapshot = File.Exists(Path.Combine(folder, "events.json"))
-            ? JsonSerializer.Deserialize(File.ReadAllText(Path.Combine(folder, "events.json")), MonitorJsonContext.CaseInsensitive.Snapshot)!
-            : new("", "Asia/Shanghai", "Bluefors Monitor 0.15 (C# port)", "", [0, 0], Keys.ToDictionary(k => k, _ => 0), []);
+            ? JsonSerializer.Deserialize(File.ReadAllText(Path.Combine(folder, "events.json")), MonitorJsonContext.Default.Snapshot)!
+            : new(StorageFormat.Version, "", "Asia/Shanghai", [0, 0], Keys.ToDictionary(k => k, _ => 0), []);
+        if (Snapshot is null || Snapshot.FormatVersion != StorageFormat.Version)
+            throw new InvalidDataException("索引事件格式不受支持，请重新建立本机索引。");
     }
     internal SqliteConnection Open(bool write = false)
     {
@@ -55,33 +57,7 @@ public sealed class DataStore
     internal void Compact(CancellationToken token)
     {
         using var db = Open(true);
-        using (var tx = db.BeginTransaction())
-        {
-            foreach (var (table, columns, key) in new[] {
-                ("samples", "t REAL,k TEXT,v REAL", "t,k"),
-                ("source_samples", "file_id INTEGER,t REAL,k TEXT,v REAL", "file_id,t,k") })
-            {
-                token.ThrowIfCancellationRequested();
-                using var schema = db.CreateCommand();
-                schema.Transaction = tx;
-                schema.CommandText = "SELECT sql FROM sqlite_master WHERE name=$name";
-                schema.Parameters.AddWithValue("$name", table);
-                if (((string?)schema.ExecuteScalar())?.Contains("WITHOUT ROWID", StringComparison.OrdinalIgnoreCase) == true)
-                    continue;
-                using var migrate = db.CreateCommand();
-                migrate.Transaction = tx;
-                migrate.CommandTimeout = 0;
-                migrate.CommandText = $"CREATE TABLE {table}_compact({columns},PRIMARY KEY({key})) WITHOUT ROWID; INSERT INTO {table}_compact SELECT * FROM {table}; DROP TABLE {table}; ALTER TABLE {table}_compact RENAME TO {table};";
-                migrate.ExecuteNonQuery();
-            }
-            using var indexes = db.CreateCommand();
-            indexes.Transaction = tx;
-            indexes.CommandTimeout = 0;
-            indexes.CommandText = "CREATE INDEX IF NOT EXISTS source_times ON source_samples(t,k); CREATE INDEX IF NOT EXISTS channel_times ON samples(k,t);";
-            indexes.ExecuteNonQuery();
-            token.ThrowIfCancellationRequested();
-            tx.Commit();
-        }
+        token.ThrowIfCancellationRequested();
         using var vacuum = db.CreateCommand();
         vacuum.CommandTimeout = 0;
         vacuum.CommandText = "VACUUM; PRAGMA optimize;";
@@ -139,7 +115,7 @@ public sealed class DataStore
                     }
                 }
             }
-            // Old caches may lack some overview days; aggregate those without changing the DB.
+            // Recover missing overview days from raw samples without changing the DB.
             for (int day = first; day <= last; day++)
             {
                 token.ThrowIfCancellationRequested();

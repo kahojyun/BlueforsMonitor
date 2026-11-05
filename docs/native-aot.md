@@ -1,6 +1,6 @@
-# Native AOT 候选版
+# Native AOT 发布与 JIT 对照
 
-默认发布仍是自包含 JIT。AOT 是独立候选包，文件名以 `-aot.zip` 结尾；使用同一份日志、设置、SQLite 索引和事件格式。两种版本不应同时打开同一个缓存做实机测试。
+0.6.0 起默认发布为 Native AOT，标准 ZIP 不带部署方式后缀。JIT 仅作开发和诊断对照，包名以 `-jit.zip` 结尾。同版本两种构建使用相同的设置和索引，不应同时操作同一缓存。
 
 ## 构建与下载
 
@@ -9,7 +9,7 @@ GitHub Actions 中手动运行 **AOT comparison**。Windows x64 和 macOS arm64 
 本地在目标平台执行（Python 3、global.json 中的 SDK；Windows 需 VS x64 C++ 工具）：
 
 ```sh
-python scripts/release.py build --runtime osx-arm64 --output artifacts/comparison
+python scripts/release.py build --runtime osx-arm64 --deployment jit --output artifacts/comparison
 python scripts/release.py build --runtime osx-arm64 --deployment aot --output artifacts/comparison
 python scripts/compare_packages.py --directory artifacts/comparison --runtime osx-arm64 --output artifacts/checks
 ```
@@ -18,7 +18,7 @@ Windows 改为 `win-x64`。默认锁文件与 `packages.aot.lock.json` 分开；
 
 ## 验证范围与数据兼容
 
-设置和事件改为 System.Text.Json 源生成。概览写入使用 Utf8JsonWriter，保持既有 `[points, gaps]` 格式和 zlib 压缩。普通构建也关闭隐式 JSON 反射，避免只在 AOT 才暴露问题。回归包含旧设置、大小写不敏感的旧事件、两个概览层级和日志追加/截断/重启。
+设置和事件改为 System.Text.Json 源生成。概览写入使用 Utf8JsonWriter，保持既有 `[points, gaps]` 格式和 zlib 压缩。普通构建也关闭隐式 JSON 反射，避免只在 AOT 才暴露问题。回归包含当前格式设置容错、事件版本、两个概览层级及日志追加/截断/重启；预览版数据不自动导入。
 
 发布程序有显式诊断入口 `--package-check OUTPUT LOGFILES`：只在指定 OUTPUT 下保存设置和索引；会读取日志、生成/读取索引、导航事件、检查手动轴与日期范围、切换主题并输出 PNG 和报告，完成后退出。普通启动不进入此路径。比较脚本生成 14 天、80,640 条合成温度样本，并让两个程序交替使用同一份缓存以检查互通。
 
@@ -33,4 +33,4 @@ macOS 保留 ad-hoc 签名、解压后签名验证和启动检查。AOT 不代�
 - `process_total_ms`：包含完整诊断和进程退出，不能当作启动时间。
 - ZIP 和解压体积排除调试符号；同一提交、SDK、同一平台比较。
 
-这些是暖操作系统缓存、合成数据的可重复对照。云端 runner 与实机配置不同；是否改为默认发布，仍需 Windows 实机检查首次打开真实大索引、持续日志追加、中文、PNG、缩放和长时间运行。现阶段不以 AOT 替代数据读取或绘图性能优化。
+这些是暖操作系统缓存、合成数据的可重复对照。云端 runner 与实机配置不同；AOT 已通过用户实机试用；每版仍需 Windows 实机检查首次打开真实大索引、持续日志追加、中文、PNG、缩放和长时间运行。现阶段不以 AOT 替代数据读取或绘图性能优化。

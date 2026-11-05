@@ -2,7 +2,7 @@ using Microsoft.Data.Sqlite;
 using System.Text;
 using System.Text.Json;
 
-namespace BlueforsAvalonia;
+namespace BlueforsMonitor;
 
 public static class BackendVerification
 {

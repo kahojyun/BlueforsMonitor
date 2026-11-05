@@ -7,7 +7,7 @@ using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia.Themes.Fluent;
 
-namespace BlueforsAvalonia;
+namespace BlueforsMonitor;
 
 public class App : Application
 {

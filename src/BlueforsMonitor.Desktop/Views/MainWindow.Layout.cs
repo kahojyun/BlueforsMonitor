@@ -3,9 +3,9 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
 using Avalonia.Threading;
-using static BlueforsAvalonia.ViewElements;
+using static BlueforsMonitor.ViewElements;
 
-namespace BlueforsAvalonia;
+namespace BlueforsMonitor;
 
 public sealed partial class MainWindow
 {

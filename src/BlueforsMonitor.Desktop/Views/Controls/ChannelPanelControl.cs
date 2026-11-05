@@ -4,9 +4,9 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
 using Avalonia.Layout;
 using Avalonia.Media;
-using static BlueforsAvalonia.ViewElements;
+using static BlueforsMonitor.ViewElements;
 
-namespace BlueforsAvalonia;
+namespace BlueforsMonitor;
 
 /// <summary>Owns channel visibility, compact readouts and axis-selection UI; never reads or saves settings.</summary>
 public sealed class ChannelPanelControl : StackPanel

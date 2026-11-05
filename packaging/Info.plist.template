@@ -3,11 +3,11 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDisplayName</key>
-	<string>Bluefors Monitor · Avalonia</string>
+	<string>Bluefors Monitor</string>
 	<key>CFBundleExecutable</key>
-	<string>BlueforsAvalonia</string>
+	<string>BlueforsMonitor</string>
 	<key>CFBundleIdentifier</key>
-	<string>org.labtools.bluefors.avalonia.preview</string>
+	<string>io.github.kahojyun.blueforsmonitor</string>
 	<key>CFBundleName</key>
 	<string>Bluefors Monitor</string>
 	<key>CFBundlePackageType</key>

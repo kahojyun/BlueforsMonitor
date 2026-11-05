@@ -9,7 +9,7 @@ using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Styling;
 using Avalonia.VisualTree;
-using BlueforsAvalonia;
+using BlueforsMonitor;
 using ScottPlot.Avalonia;
 
 internal static class Program
@@ -49,6 +49,7 @@ public sealed class CheckApp : App
     }
     static async Task Check(MainWindow w)
     {
+        Require(w.Title == $"Bluefors Monitor {AppVersion.Current}", "Product title has no framework suffix");
         AxisControllerChecks.Run();
         TemperatureUnitChecks.Run();
         var dateRange = w.GetVisualDescendants().OfType<DateRangeControl>().Single();

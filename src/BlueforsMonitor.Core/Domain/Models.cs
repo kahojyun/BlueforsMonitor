@@ -1,4 +1,4 @@
-namespace BlueforsAvalonia;
+namespace BlueforsMonitor;
 
 public record Sample(double T, double V);
 public record EventRecord(double Start, double Peak, double End, double Baseline, double Value, bool Fast, bool Recovered, string Detail)
@@ -9,7 +9,7 @@ public record EventRecord(double Start, double Peak, double End, double Baseline
     public string RiseText => "+" + ((Value - Baseline) * 1000).ToString("F2");
     public string DurationText => ((End - Start) / 60).ToString("F0") + " min";
 }
-public record Snapshot(string Source, string TimeZone, string Detection, string DetectorSha256, double[] Bounds, Dictionary<string, int> Counts, EventRecord[] Events);
+public record Snapshot(int FormatVersion, string Source, string TimeZone, double[] Bounds, Dictionary<string, int> Counts, EventRecord[] Events);
 public record SeriesData(Sample[] Points, HashSet<double> Gaps);
 public record WindowData(Dictionary<string, SeriesData> Series, double Left, double Right, int Resolution, double Milliseconds)
 {

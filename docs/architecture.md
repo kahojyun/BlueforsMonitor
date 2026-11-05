@@ -22,7 +22,7 @@ Desktop 的 MonitorViewModel 通过属性通知提供状态、来源及事件数
 
 ## 布局状态
 
-`LayoutSettings` 是现有 AppSettings 内的独立布局配置，旧配置缺少此字段时使用默认值，读取时校验事件面板高度。`MainWindow.Layout.cs` 仅协调面板可见性、分隔条、专注模式与保存；专注模式不会覆盖普通模式的日期/事件/详情偏好。窗口尺寸导致的临时高度约束不写回配置，用户拖动或键盘调整才保存面板高度。
+`LayoutSettings` 是现有 AppSettings 内的独立布局配置，当前格式的部分配置缺少此字段时使用默认值，读取时校验事件面板高度。`MainWindow.Layout.cs` 仅协调面板可见性、分隔条、专注模式与保存；专注模式不会覆盖普通模式的日期/事件/详情偏好。窗口尺寸导致的临时高度约束不写回配置，用户拖动或键盘调整才保存面板高度。
 
 通道面板将开关与读数分成独立行，开关项目和读数宽度固定，读数栏可横向滚动；事件表移除固定 170 高度，由窗口分配空间，详情仅在选中事件且展开时显示，并限制高度以保留可用数据行。
 
@@ -46,6 +46,6 @@ Desktop 的 MonitorViewModel 通过属性通知提供状态、来源及事件数
 
 日期面板默认隐藏时也显式应用 CalendarDatePicker 模板，避免向未初始化的日历写 Text 中断首次 Navigate。构建绘图后立即同步勾选轴集合，空屏不挂载未选通道。自动轴在加载/缓存导航后仅排列非手动通道；顶部 HeaderRightAxis 由 ScottPlot 本身绘制，因此 PNG 也包含标签。Skia 绘图单独解析支持中文的字体，不依赖 Avalonia 的字体回退。
 
-新 samples/source_samples 使用 WITHOUT ROWID，保留时间与通道索引、完整来源追踪。旧缓存的 Compact 先在事务中重建表与索引，再 VACUUM；与导入共用目录级 gate，取消时遵循 SQLite 事务边界。同步连接释放后尝试 TRUNCATE checkpoint，忙时不阻塞监测；不删除 WAL 文件。
+新 samples/source_samples 使用 WITHOUT ROWID，保留时间与通道索引、完整来源追踪。Compact 只执行 VACUUM/optimize，不再迁移预览版表；与导入共用目录级 gate，取消时遵循 SQLite 事务边界。同步连接释放后尝试 TRUNCATE checkpoint，忙时不阻塞监测；不删除 WAL 文件。
 
-Windows ZIP 根目录的原生 GUI 启动器按自身路径启动 app/BlueforsAvalonia.exe，不依赖当前工作目录、额外 .NET 安装或命令行窗口。源码位于 packaging/windows-launcher.c，打包脚本使用 Zig 或 MSVC 编译，不提交预编译启动器。
+Windows ZIP 根目录的原生 GUI 启动器按自身路径启动 app/BlueforsMonitor.exe，不依赖当前工作目录、额外 .NET 安装或命令行窗口。源码位于 packaging/windows-launcher.c，打包脚本使用 Zig 或 MSVC 编译，不提交预编译启动器。

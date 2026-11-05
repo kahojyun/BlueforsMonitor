@@ -1,6 +1,6 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
-namespace BlueforsAvalonia;
+namespace BlueforsMonitor;
 
 public sealed class MonitorViewModel : INotifyPropertyChanged
 {

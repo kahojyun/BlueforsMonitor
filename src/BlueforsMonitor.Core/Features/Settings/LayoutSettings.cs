@@ -1,9 +1,15 @@
-namespace BlueforsAvalonia;
+namespace BlueforsMonitor;
 
 public sealed class LayoutSettings
 {
-    public bool FocusMode { get; set; }
-    public bool DatesExpanded { get; set; }
+    public bool FocusMode
+    {
+        get; set;
+    }
+    public bool DatesExpanded
+    {
+        get; set;
+    }
     public bool EventsExpanded { get; set; } = true;
     public bool DetailsExpanded { get; set; } = true;
     public double EventPanelHeight { get; set; } = 150;

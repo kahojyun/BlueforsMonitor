@@ -42,8 +42,8 @@ def sha256(path):
     return digest.hexdigest()
 
 
-def archive_name(runtime, value=None, deployment="jit"):
-    suffix = "-aot" if deployment == "aot" else ""
+def archive_name(runtime, value=None, deployment="aot"):
+    suffix = "-jit" if deployment == "jit" else ""
     return f"BlueforsMonitor-{value or version()}-{runtime}{suffix}.zip"
 
 
@@ -70,7 +70,7 @@ def verify_checksums(directory, names):
         raise ValueError("Checksum mismatch or missing file")
 
 
-def validate_archive(path, runtime, expected_version, deployment="jit"):
+def validate_archive(path, runtime, expected_version, deployment="aot"):
     with zipfile.ZipFile(path) as archive:
         if archive.testzip() is not None:
             raise ValueError("Invalid ZIP")
@@ -79,7 +79,7 @@ def validate_archive(path, runtime, expected_version, deployment="jit"):
             raise ValueError("Unexpected archive path or user data")
         if runtime == "win-x64":
             prefix = "BlueforsMonitor/"
-            for name in ("BlueforsMonitor.exe", "app/BlueforsAvalonia.exe"):
+            for name in ("BlueforsMonitor.exe", "app/BlueforsMonitor.exe"):
                 data = archive.read(prefix + name)
                 pe = struct.unpack_from("<I", data, 0x3C)[0]
                 if data[pe:pe + 4] != b"PE\0\0" or struct.unpack_from("<H", data, pe + 4)[0] != 0x8664 or struct.unpack_from("<H", data, pe + 92)[0] != 2:
@@ -94,7 +94,9 @@ def validate_archive(path, runtime, expected_version, deployment="jit"):
             info = plistlib.loads(archive.read(prefix + "Info.plist"))
             if info["CFBundleShortVersionString"] != expected_version or info["CFBundleVersion"] != expected_version:
                 raise ValueError("macOS bundle version differs from VERSION")
-            executable = archive.getinfo(prefix + "MacOS/BlueforsAvalonia")
+            if info.get("CFBundleIdentifier") != "io.github.kahojyun.blueforsmonitor" or info.get("CFBundleExecutable") != "BlueforsMonitor" or info.get("CFBundleDisplayName") != "Bluefors Monitor":
+                raise ValueError("macOS product identity mismatch")
+            executable = archive.getinfo(prefix + "MacOS/BlueforsMonitor")
             data = archive.read(executable)
             if data[:4] != b"\xcf\xfa\xed\xfe" or struct.unpack_from("<I", data, 4)[0] != 0x100000C:
                 raise ValueError("Expected an arm64 Mach-O executable")
@@ -107,9 +109,9 @@ def validate_archive(path, runtime, expected_version, deployment="jit"):
             metadata = json.loads(archive.read(prefix + "Resources/BUILD-INFO.json"))
         if metadata["version"] != expected_version or metadata["runtime"] != runtime:
             raise ValueError("Embedded build metadata does not match package")
-        if metadata.get("deployment", "jit") != deployment:
+        if metadata["deployment"] != deployment:
             raise ValueError("Deployment mode does not match package")
-        if deployment == "aot" and any(Path(name).name in ("coreclr.dll", "libcoreclr.dylib", "BlueforsAvalonia.dll") for name in names):
+        if deployment == "aot" and any(Path(name).name in ("coreclr.dll", "libcoreclr.dylib", "BlueforsMonitor.dll") for name in names):
             raise ValueError("AOT package unexpectedly contains JIT runtime/entry assembly")
         return metadata
 
@@ -147,7 +149,7 @@ def sign_mac_bundle(app):
 
 
 def smoke_mac_bundle(app):
-    process = subprocess.Popen([str(app / "Contents/MacOS/BlueforsAvalonia")], cwd=app.parent)
+    process = subprocess.Popen([str(app / "Contents/MacOS/BlueforsMonitor")], cwd=app.parent)
     try:
         code = process.wait(timeout=10)
         raise ValueError(f"macOS app exited during startup: {code}")
@@ -163,7 +165,7 @@ def smoke_mac_bundle(app):
                 process.wait()
 
 
-def build(runtime, output, deployment="jit"):
+def build(runtime, output, deployment="aot"):
     value = version()
     output = Path(output).resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -189,7 +191,7 @@ def build(runtime, output, deployment="jit"):
         for path in publish.iterdir():
             if path.suffix == ".dSYM": shutil.rmtree(path)
             elif path.suffix in (".pdb", ".dbg"): path.unlink()
-        config = publish / "BlueforsAvalonia.runtimeconfig.json"
+        config = publish / "BlueforsMonitor.runtimeconfig.json"
         runtime_config = json.loads(config.read_text(encoding="utf-8")) if config.exists() else {"runtimeOptions": {}}
         metadata = {
             "version": value, "commit": commit, "dirty": dirty, "runtime": runtime,
@@ -318,7 +320,7 @@ def main():
     commands.add_parser("version")
     package = commands.add_parser("build")
     package.add_argument("--runtime", choices=RUNTIMES, required=True)
-    package.add_argument("--deployment", choices=("jit", "aot"), default="jit")
+    package.add_argument("--deployment", choices=("jit", "aot"), default="aot")
     package.add_argument("--output", type=Path, default=ROOT / "artifacts/release")
     for name in ("manifest", "validate", "draft"):
         item = commands.add_parser(name)

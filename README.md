@@ -49,7 +49,7 @@ macOS 输出 `artifacts/release/BlueforsMonitor-<版本>-osx-arm64.zip`。Window
 ./scripts/publish.ps1
 ```
 
-Windows 打包还需要 Python 3，以及 Zig 或 VS x64 开发者命令行中的 cl.exe，用于编译无控制台的原生启动器。输出 `artifacts/release/BlueforsMonitor-<版本>-win-x64.zip`；完整解压后双击根目录唯一的 `BlueforsMonitor.exe`，依赖位于 `app` 子目录。包包含 .NET 运行时。
+Windows Native AOT 打包需要 Python 3、VS x64 C++ 工具和 Windows SDK；无控制台启动器使用 Zig 或 cl.exe 编译。输出 `artifacts/release/BlueforsMonitor-<版本>-win-x64.zip`；完整解压后双击根目录唯一的 `BlueforsMonitor.exe`，依赖位于 `app` 子目录。包无需另外安装 .NET。
 
 产品版本统一来自 `VERSION`。独立的 **Draft release** 工作流生成两平台包、构建信息和 SHA-256 校验清单，仅创建 Release 草稿，实机验收后由维护者正式发布。详见 [发布流程](docs/releasing.md)。
 
@@ -109,9 +109,13 @@ dotnet run --project tests/BlueforsMonitor.DesktopChecks -c Release
 - **A / 适配按钮 / 纵轴或顶部标签双击**：适配选中通道。文本、日期编辑器内的按键保留输入含义。
 - **自动轴**：随当前视野适配未手动调整的通道；手动平移、缩放的轴保持范围。该偏好会保存。
 - 重开目录时先显示已有缓存，再检查日志变化。首次建立索引仍需要读取日志、生成概览与事件，进度文字会区分这些阶段。
-- 新索引采用紧凑表结构；旧索引可运行一次 **更多 → 压缩本机索引**。压缩在后台执行，需要额外临时磁盘空间，不改动源日志。
+- 新索引采用紧凑表结构；需要释放空闲页时可运行 **更多 → 压缩本机索引**。压缩在后台执行，需要额外临时磁盘空间，不改动源日志。
 - 同步结束后尝试 checkpoint 并收缩 WAL；其他进程仍在读取时可能暂时保留，之后重试。不要手动删除 WAL。来源记录用于重复文件和截断恢复，因此索引仍可能大于旧 Python 版。
 
-## Native AOT 候选测试
+## Native AOT 发布
 
-默认发布方式保持 JIT。独立的 **AOT comparison** 工作流提供同提交的 JIT/AOT 包、启动对照报告和绘图截图。用法、测量边界及兼容性检查见 [Native AOT 候选版](docs/native-aot.md)。
+默认发布方式为 Native AOT，JIT 保留用于开发和诊断。独立的 **AOT comparison** 工作流提供同提交的 JIT/AOT 包、启动对照报告和绘图截图。用法、测量边界及兼容性检查见 [Native AOT 发布与 JIT 对照](docs/native-aot.md)。
+
+## 首次使用 0.6.0
+
+本版统一名称为 Bluefors Monitor，使用新的 `BlueforsMonitor` 设置目录及版本化索引，不迁移或删除预览版 `BlueforsMonitor.Avalonia` 数据。首次打开请选择原始 Logfiles 重新索引。清理范围见 [正式版准备](docs/release-preparation.md)。

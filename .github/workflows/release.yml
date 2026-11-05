@@ -86,6 +86,8 @@ jobs:
           }
       - name: Build and validate package
         run: python scripts/release.py build --runtime ${{ matrix.runtime }}
+      - name: Exercise packaged AOT application
+        run: python scripts/compare_packages.py --directory artifacts/release --runtime ${{ matrix.runtime }} --deployment aot --output artifacts/checks
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-${{ matrix.runtime }}
