@@ -1,5 +1,7 @@
 # Bluefors Monitor
 
+[下载最新正式版](https://github.com/kahojyun/BlueforsMonitor/releases/latest) · Windows x64 / macOS Apple Silicon · Native AOT
+
 使用 Avalonia 与 ScottPlot 的 Bluefors 日志桌面查看器。默认主题跟随系统，数据入口只有 Logfiles 目录；SQLite 由程序作为内部索引自动管理。项目不包含实验日志、数据库、账户信息或预编译运行时。
 
 本项目为第三方社区工具，与 Bluefors 官方无隶属或背书关系。当前为预览版，用于日志观察与事件回看，不提供设备控制或安全联锁。事件阈值和通道定义来自特定使用场景，检测结果不等同于故障诊断。

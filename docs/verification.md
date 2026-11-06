@@ -66,3 +66,13 @@ Mac 桌面回归新增列分隔线 DragDelta 路由测试，验证拖动后表�
 ## 0.6.0 正式版准备
 
 用户反馈 AOT 实机运行顺利，0.6.0 设为默认发布基础。历史记录中的旧格式迁移仅适用于对应预览版；当前采用新设置目录及 v1 索引，不再导入预览版缓存。候选发布重新执行回归、包内应用检查及 macOS 签名验证，正式发布仍需用户验收。
+
+## 0.6.0 正式发布（2026-11-06）
+
+用户确认 0.6.0 实机使用正常后，将已验收草稿转为正式版并标记 Latest。发布沿用原始 AOT 包，未重新构建或替换，源码提交为 `83e5b7ad787fc31ef7bb8d8ccf77a4673e57670f`。
+
+- [正式发布与下载](https://github.com/kahojyun/BlueforsMonitor/releases/tag/v0.6.0)
+- [发布构建及包内检查](https://github.com/kahojyun/BlueforsMonitor/actions/runs/42063838852)
+- [AOT/JIT 对照](https://github.com/kahojyun/BlueforsMonitor/actions/runs/42063849856)
+
+固定时间档位的概览策略保持不变；某些跨度下曲线简化是已知显示行为，不影响原始数据上的事件检测和光标查询。
