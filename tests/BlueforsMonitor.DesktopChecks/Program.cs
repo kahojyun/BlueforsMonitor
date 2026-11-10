@@ -438,6 +438,35 @@ public sealed class CheckApp : App
         Require(table.Bounds.Height >= 80, "Expanded details must leave usable table rows in small window");
         Require(AppSettings.Load().Layout.EventPanelHeight == savedHeight, "Temporary height clamp must not overwrite saved panel height");
         Capture(w, "small");
+        w.Width = 800;
+        w.Height = 480;
+        await Task.Delay(350);
+        var viewport = w.GetVisualDescendants().OfType<ScrollViewer>().Single(v => v.Name == "WindowViewport");
+        Require(viewport.Extent.Width > viewport.Viewport.Width && viewport.Extent.Height > viewport.Viewport.Height,
+            "Very small windows expose scrollbars instead of clipping controls");
+        var savedBounds = w.ClientSize;
+        Call(w, "RememberNormalBounds");
+        Field<AppSettings>(w, "_settings").Save();
+        var placementWindow = new MainWindow(new DataStore(Path.Combine(AppSettings.Root, "placement-check")));
+        placementWindow.Show();
+        await Task.Delay(350);
+        Require(Math.Abs(placementWindow.ClientSize.Width - savedBounds.Width) < 2 && Math.Abs(placementWindow.ClientSize.Height - savedBounds.Height) < 2,
+            "Reopened window restores normal client size");
+        placementWindow.WindowState = WindowState.Maximized;
+        await Task.Delay(350);
+        placementWindow.Close();
+        var placement = AppSettings.Load().Window;
+        Require(placement.Maximized && Math.Abs(placement.Width - savedBounds.Width) < 2 && Math.Abs(placement.Height - savedBounds.Height) < 2,
+            "Closing maximized preserves normal size and maximized preference");
+        var maximizedWindow = new MainWindow(new DataStore(Path.Combine(AppSettings.Root, "maximized-check")));
+        maximizedWindow.Show();
+        await Task.Delay(350);
+        Require(maximizedWindow.WindowState == WindowState.Maximized, "Reopened window restores maximized state");
+        maximizedWindow.WindowState = WindowState.Normal;
+        await Task.Delay(350);
+        Require(Math.Abs(maximizedWindow.ClientSize.Width - savedBounds.Width) < 2 && Math.Abs(maximizedWindow.ClientSize.Height - savedBounds.Height) < 2,
+            "Unmaximizing restores saved normal size");
+        maximizedWindow.Close();
     }
     static void Capture(MainWindow window, string name)
     {

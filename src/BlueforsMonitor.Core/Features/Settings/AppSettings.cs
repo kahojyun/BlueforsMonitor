@@ -8,6 +8,7 @@ public sealed class AppSettings
     {
         get; set;
     }
+    public WindowSettings Window { get; set; } = new();
     public LayoutSettings Layout { get; set; } = new();
     [System.Text.Json.Serialization.JsonRequired]
     public int Version { get; set; } = 1;
@@ -30,6 +31,7 @@ public sealed class AppSettings
             var settings = JsonSerializer.Deserialize(File.ReadAllText(Path.Combine(Root, "settings.json")), MonitorJsonContext.Default.AppSettings) ?? new();
             if (settings.Version != 1)
                 return new();
+            settings.Window ??= new();
             settings.Layout ??= new();
             settings.Layout.Normalize();
             return settings;

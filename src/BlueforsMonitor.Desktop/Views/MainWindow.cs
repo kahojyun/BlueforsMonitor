@@ -57,11 +57,7 @@ public sealed partial class MainWindow : Window
         _session = new MonitoringSession(store, AppSettings.Root);
         _axisController = new AxisController(_plot.Plot, _dark);
         Title = $"Bluefors Monitor {AppVersion.Current}";
-        Width = 1460;
-        Height = 980;
-        MinWidth = 1000;
-        MinHeight = 640;
-        WindowStartupLocation = WindowStartupLocation.CenterScreen;
+        InitializeWindowPlacement();
         this.Bind(BackgroundProperty, this.GetResourceObservable("Page"));
         FontFamily = new FontFamily(UiTheme.Font);
         DataContext = _viewModel;
@@ -97,8 +93,23 @@ public sealed partial class MainWindow : Window
     }
     void BuildUi()
     {
-        var root = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,Auto,Auto,*,Auto"), Margin = new Thickness(12, 8), RowSpacing = 5 };
-        Content = root;
+        var root = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,Auto,Auto,*,Auto"), RowSpacing = 5 };
+        var viewport = new ScrollViewer
+        {
+            Name = "WindowViewport",
+            Margin = new Thickness(12, 8),
+            Content = root,
+            HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
+            VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto
+        };
+        void FitContent()
+        {
+            root.Width = Math.Max(976, viewport.Viewport.Width);
+            root.Height = Math.Max(624, viewport.Viewport.Height);
+        }
+        viewport.PropertyChanged += (_, e) => { if (e.Property == ScrollViewer.ViewportProperty) FitContent(); };
+        FitContent();
+        Content = viewport;
         var toolbar = new WrapPanel { Orientation = Orientation.Horizontal };
         void AddTool(Control control)
         {

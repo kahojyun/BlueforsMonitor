@@ -1,18 +1,14 @@
-本草稿用于正式发布前的实机验收，尚未正式发布。
+本草稿用于 Windows 笔记本实机验收，尚未正式发布。
 
-本轮内容：
-- 默认发布切换为 Native AOT；JIT 保留为开发与诊断对照。
-- 产品、程序集、可执行文件统一为 Bluefors Monitor / BlueforsMonitor；窗口去掉 Avalonia 后缀。
-- macOS bundle ID 固定为 io.github.kahojyun.blueforsmonitor。
-- 使用新的 BlueforsMonitor 设置目录及 v1 索引，删除预览版/Python 专用迁移与兼容写入。
-- 保留实时日志容错、概览恢复、索引压缩及现有绘图交互。
+## 窗口适配与记忆
 
-升级说明：首次打开请重新选择原始 Logfiles 建立索引，并重新设置主题、通道和布局。旧 BlueforsMonitor.Avalonia 数据不会自动迁移或删除。不要把旧数据库复制进新目录，不要删除原始日志。
+- 启动时按屏幕可用区域和缩放比例调整窗口，预留标题栏和边框空间，避免小屏幕上窗口超出屏幕。
+- 记住退出前的窗口大小、位置和最大化状态；最大化不会覆盖普通窗口的尺寸。
+- 换屏幕或调整缩放后，恢复的位置会校正到当前屏幕内。
+- 可用空间过小时提供滚动条，仍可访问日期、事件及底部操作。
 
-Windows 完整解压后运行根目录 BlueforsMonitor.exe；macOS 打开 Bluefors Monitor.app。macOS 包已 ad-hoc 签名，尚未进行 Developer ID 签名或公证，首次下载可能需在系统设置中允许打开。
+从 0.6.0 升级可继续使用现有索引和设置，无需重新索引。首次启动使用适应当前屏幕的默认大小，调整后退出即可记住。
 
-SHA256SUMS 提供下载校验，BUILD-INFO.json 记录源码提交、AOT 部署方式和构建环境。
+Windows：完整解压后运行根目录 BlueforsMonitor.exe。macOS：打开 Bluefors Monitor.app；包已 ad-hoc 签名，未进行 Developer ID 签名或公证。SHA256SUMS 用于下载校验。
 
-验收重点：首次重新索引与出图、退出重开、真实日志追加与暂停/跟随、事件表、中文、mK/K、R/A、日期、手动缩放与 PNG 导出；Windows 移动解压目录后启动。
-
-待实机验收后，由维护者手动决定正式发布。工作流只创建草稿，不覆盖已有版本。
+本地构建、核心与 Mac 桌面回归通过；Windows 小屏、高 DPI、最大化/还原及重开体验仍待实机验收。工作流只创建草稿，0.6.0 正式版保持不变。

@@ -31,6 +31,7 @@ try
     Verification.Check(AppSettings.Load().Theme == "跟随系统", "Unknown settings format falls back safely");
     File.WriteAllText(settingsFile, "{\"Theme\":\"浅色\"}");
     Verification.Check(AppSettings.Load().Theme == "跟随系统", "Unversioned preview settings are not imported");
+    WindowSettingsChecks.Run();
     BackendVerification.Run(scratch);
     StorageChecks.Run(scratch);
     StorageFormatChecks.Run(scratch);
