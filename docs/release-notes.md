@@ -1,4 +1,4 @@
-本草稿用于 Windows 笔记本实机验收，尚未正式发布。
+Bluefors Monitor 0.6.1 已通过用户实机使用验收。
 
 ## 窗口适配与记忆
 
@@ -11,4 +11,4 @@
 
 Windows：完整解压后运行根目录 BlueforsMonitor.exe。macOS：打开 Bluefors Monitor.app；包已 ad-hoc 签名，未进行 Developer ID 签名或公证。SHA256SUMS 用于下载校验。
 
-本地构建、核心与 Mac 桌面回归通过；Windows 小屏、高 DPI、最大化/还原及重开体验仍待实机验收。工作流只创建草稿，0.6.0 正式版保持不变。
+本地桌面回归、三平台构建与核心回归、Windows/macOS AOT 包内检查均通过。正式发布沿用已验收的安装包。
